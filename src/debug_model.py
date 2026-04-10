@@ -1,10 +1,10 @@
-import joblib
-import sys
 import os
-import numpy as np
+import sys
+
+import joblib
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.utils import generate_features, normalize_address
+from src.utils import generate_features
 
 print("=" * 50)
 print("ДИАГНОСТИКА МОДЕЛИ")
@@ -21,19 +21,19 @@ print(f"   Ожидаемое количество признаков: {model.n_
 query = "Таллинская 20 корпус 3"
 candidate = "Таллинская улица, дом 20, корпус 3"
 
-print(f"\n2. Тестовые адреса:")
+print("\n2. Тестовые адреса:")
 print(f"   Запрос: {query}")
 print(f"   Кандидат: {candidate}")
 
 # 3. Генерируем признаки
 features = generate_features(query, candidate)
-print(f"\n3. Признаки:")
+print("\n3. Признаки:")
 print(f"   Количество признаков: {len(features)}")
 print(f"   Значения признаков: {[round(f, 3) for f in features[:5]]}... (первые 5)")
 
 # 4. Масштабируем
 features_scaled = scaler.transform([features])
-print(f"\n4. После масштабирования:")
+print("\n4. После масштабирования:")
 print(f"   Форма: {features_scaled.shape}")
 print(f"   Значения: {[round(f, 3) for f in features_scaled[0][:5]]}...")
 
@@ -41,7 +41,7 @@ print(f"   Значения: {[round(f, 3) for f in features_scaled[0][:5]]}..."
 pred = model.predict(features_scaled)
 pred_proba = model.predict_proba(features_scaled)
 
-print(f"\n5. Предсказание:")
+print("\n5. Предсказание:")
 print(f"   Класс: {pred[0]}")
 print(f"   Вероятности: {pred_proba[0]}")
 print(f"   Вероятность класса 1 (совпадение): {pred_proba[0][1]}")
@@ -52,14 +52,14 @@ features_self_scaled = scaler.transform([features_self])
 pred_self = model.predict(features_self_scaled)
 pred_proba_self = model.predict_proba(features_self_scaled)
 
-print(f"\n6. Тот же адрес (сам с собой):")
+print("\n6. Тот же адрес (сам с собой):")
 print(f"   Вероятность совпадения: {pred_proba_self[0][1]}")
 
 # 7. Проверка распределения вероятностей на нескольких примерах
-print(f"\n7. Тест на нескольких кандидатах из базы:")
+print("\n7. Тест на нескольких кандидатах из базы:")
 test_candidates = [
     "Таллинская улица, дом 20, корпус 3",
-    "Таллинская улица, дом 13, корпус 2", 
+    "Таллинская улица, дом 13, корпус 2",
     "улица Талалихина, дом 1, корпус 3",
     "ул. Таманская, влд. 2/7/2"
 ]

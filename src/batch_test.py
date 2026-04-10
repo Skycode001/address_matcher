@@ -3,9 +3,10 @@
 Запуск: python src/batch_test.py
 """
 
-import pandas as pd
-import sys
 import os
+import sys
+
+import pandas as pd
 from tabulate import tabulate
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -99,7 +100,7 @@ def run_tests():
     print("=" * 100)
     print("АВТОМАТИЧЕСКОЕ ТЕСТИРОВАНИЕ АДРЕСОВ")
     print("=" * 100)
-    
+
     # Загружаем базу адресов
     print("\n📂 Загрузка базы адресов...")
     try:
@@ -111,35 +112,35 @@ def run_tests():
     except Exception as e:
         print(f"   ❌ Ошибка загрузки: {e}")
         return
-    
+
     # Создаем матчер
     print("\n🔧 Инициализация поискового движка...")
     matcher = AddressMatcher(df, use_index=True)
-    
+
     # Результаты тестов
     results = []
-    
+
     print("\n" + "=" * 100)
     print("🧪 ЗАПУСК ТЕСТОВ")
     print("=" * 100)
-    
+
     for i, query in enumerate(TEST_ADDRESSES, 1):
         print(f"\n[{i}/{len(TEST_ADDRESSES)}] 📝 Запрос: '{query}'")
         print("-" * 80)
-        
+
         try:
             candidates = matcher.find_best_match(query)
-            
+
             if candidates:
                 best = candidates[0]
                 expected = EXPECTED_UNOMS.get(query, None)
-                
+
                 if expected is not None:
                     is_correct = (best['unom'] == expected)
                     status = "✅" if is_correct else "❌"
                 else:
                     status = "❓"
-                
+
                 results.append({
                     "№": i,
                     "Запрос": query,
@@ -149,18 +150,18 @@ def run_tests():
                     "ML": f"{best.get('ml_score', 0):.2%}",
                     "Статус": status
                 })
-                
+
                 print(f"   🎯 Найден УНОМ: {best['unom']}")
                 print(f"   📍 Адрес: {best['address']}")
                 print(f"   📊 Уверенность: {best['final_score']:.2%} (ML: {best.get('ml_score', 0):.2%})")
-                
+
                 if expected is not None:
                     if is_correct:
                         print(f"   ✅ Ожидалось: {expected} - ВЕРНО!")
                     else:
                         print(f"   ❌ Ожидалось: {expected} - НЕВЕРНО!")
                 else:
-                    print(f"   ❓ Ожидаемый УНОМ не указан")
+                    print("   ❓ Ожидаемый УНОМ не указан")
             else:
                 results.append({
                     "№": i,
@@ -171,8 +172,8 @@ def run_tests():
                     "ML": "0%",
                     "Статус": "❌"
                 })
-                print(f"   ❌ НИЧЕГО НЕ НАЙДЕНО!")
-                
+                print("   ❌ НИЧЕГО НЕ НАЙДЕНО!")
+
         except Exception as e:
             print(f"   ❌ ОШИБКА: {e}")
             results.append({
@@ -184,31 +185,31 @@ def run_tests():
                 "ML": "0%",
                 "Статус": "❌"
             })
-    
+
     # Выводим сводную таблицу
     print("\n" + "=" * 100)
     print("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ")
     print("=" * 100)
-    
+
     # Создаем DataFrame для красивого вывода
     df_results = pd.DataFrame(results)
-    
+
     # Выводим таблицу
     print(tabulate(df_results, headers='keys', tablefmt='grid', showindex=False, maxcolwidths=[5, 35, 10, 45, 12, 8, 6]))
-    
+
     # Статистика
     print("\n" + "=" * 100)
     print("📈 СТАТИСТИКА")
     print("=" * 100)
-    
+
     total = len(results)
     found = sum(1 for r in results if r["УНОМ"] not in ["❌", "⚠️"])
     correct = sum(1 for r in results if r["Статус"] == "✅")
-    
+
     print(f"📝 Всего тестов: {total}")
     print(f"🔍 Найдено адресов: {found} ({found/total*100:.1f}%)")
     print(f"✅ Правильных совпадений: {correct} ({correct/total*100:.1f}%)")
-    
+
     # Средняя уверенность
     confidences = []
     for r in results:
@@ -218,11 +219,11 @@ def run_tests():
                 confidences.append(conf)
         except:
             pass
-    
+
     if confidences:
         avg_confidence = sum(confidences) / len(confidences)
         print(f"📊 Средняя уверенность: {avg_confidence:.2%}")
-    
+
     # Детальный разбор проблемных запросов
     problems = [r for r in results if r["Статус"] == "❌"]
     if problems:
@@ -234,7 +235,7 @@ def run_tests():
             print(f"   Найденный УНОМ: {r['УНОМ']}")
             print(f"   Адрес: {r['Адрес']}")
             print(f"   Уверенность: {r['Уверенность']}")
-    
+
     # Успешные запросы
     success = [r for r in results if r["Статус"] == "✅"]
     if success:
