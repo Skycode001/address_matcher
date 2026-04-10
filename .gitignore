@@ -43,3 +43,8 @@ Thumbs.db
 
 # pytest
 .pytest_cache/
+
+# Test files
+src/batch_test.py
+src/test_*.py
+*_test.py
