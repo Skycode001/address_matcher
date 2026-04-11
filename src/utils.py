@@ -34,6 +34,7 @@ ABBREVIATIONS = {
     'стр': 'строение',
     'строение': 'строение',
     'строен': 'строение',
+    'с': 'строение',
     'владение': 'владение',
     'вл': 'владение',
     'лит': 'литера',
@@ -93,6 +94,18 @@ def normalize_address(address):
     address = re.sub(r'([а-яa-z])\.(\d)', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d)\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-яa-z])\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
+    
+    # ===== ОБРАБОТКА СОКРАЩЕНИЯ "с" (СТРОЕНИЕ) =====
+    # "11с4" -> "11 стр 4"
+    address = re.sub(r'(\d+)с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
+    # "д11с4" -> "д 11 стр 4"
+    address = re.sub(r'(д|дом)(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
+    # "д.11с4" -> "д 11 стр 4"
+    address = re.sub(r'(д|дом)\.(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
+    # "11 с4" -> "11 стр 4"
+    address = re.sub(r'(\d+)\s+с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
+    # "д 11с4" -> "д 11 стр 4"
+    address = re.sub(r'(д|дом)\s+(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
     
     # ===== НОВЫЕ ПРАВИЛА ДЛЯ СЛИТНЫХ ФОРМ =====
     # 7. Разбираем слитные формы "11стр4" -> "11 стр 4"
