@@ -29,8 +29,8 @@ ABBREVIATIONS = {
     'корп': 'корпус',
     'корпуса': 'корпус',
     'корпус': 'корпус',
-    'кор': 'корпус',        
-    'кор.': 'корпус',       
+    'кор': 'корпус',
+    'кор.': 'корпус',
     'стр': 'строение',
     'строение': 'строение',
     'строен': 'строение',
@@ -72,7 +72,7 @@ def normalize_address(address):
         return ""
 
     address = str(address).lower().strip()
-    
+
     # ===== УНИВЕРСАЛЬНОЕ ПРАВИЛО ДЛЯ КОРПУСА И СТРОЕНИЯ =====
     address = re.sub(
         r'(?:корпус|корп|кор|к)\.?\s*(\d+)\s+(?:строение|строен|стр|с)\.?\s*(\d+)',
@@ -80,14 +80,14 @@ def normalize_address(address):
         address,
         flags=re.IGNORECASE
     )
-    
+
     address = re.sub(
         r'(?:корпус|корп|кор|к)\.?(\d+)(?:строение|строен|стр|с)\.?(\d+)',
         r'корпус \1 строение \2',
         address,
         flags=re.IGNORECASE
     )
-    
+
     # ===== "корпус 1 с 4" -> "корпус 1 строение 4" =====
     address = re.sub(
         r'корпус\s+(\d+)\s+с\s+(\d+)',
@@ -101,7 +101,7 @@ def normalize_address(address):
         address,
         flags=re.IGNORECASE
     )
-    
+
     # ===== ОБРАТНЫЙ ПОРЯДОК: "строение 4 корпус 1 15" -> "15 корпус 1 строение 4" =====
     address = re.sub(
         r'строение\s+(\d+)\s+корпус\s+(\d+)\s+(\d+)',
@@ -115,7 +115,7 @@ def normalize_address(address):
         address,
         flags=re.IGNORECASE
     )
-    
+
     # ===== НОРМАЛИЗАЦИЯ СТРОЕНИЯ =====
     # Приводим все варианты строения к единому формату "строение N"
     address = re.sub(r'строение(\d+)', r'строение \1', address, flags=re.IGNORECASE)
@@ -125,7 +125,7 @@ def normalize_address(address):
     address = re.sub(r'стр\.(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'с(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'с\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
-    
+
     # ===== НОРМАЛИЗАЦИЯ КОРПУСА =====
     # Приводим все варианты корпуса к единому формату "корпус N"
     address = re.sub(r'корпус(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
@@ -134,52 +134,52 @@ def normalize_address(address):
     address = re.sub(r'кор\s+(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
     address = re.sub(r'к(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
     address = re.sub(r'к\s+(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
-    
+
     # ===== НОРМАЛИЗАЦИЯ ДОМА =====
     # Приводим все варианты дома к единому формату "дом N"
     address = re.sub(r'д(\d+)', r'дом \1', address, flags=re.IGNORECASE)
     address = re.sub(r'д\.(\d+)', r'дом \1', address, flags=re.IGNORECASE)
-    
+
     # ===== ОБРАТНЫЙ ПОРЯДОК: "строение 4 корпус 1 15" -> "15 корпус 1 строение 4" (с домом) =====
     pattern = r'(?:строение|стр)\s+(\d+)\s+(?:корпус|кор)\s+(\d+)\s+(?:(?:дом|д)\s+)?(\d+)'
     address = re.sub(pattern, r'\3 корпус \2 строение \1', address, flags=re.IGNORECASE)
-    
+
     pattern2 = r'(?:строение|стр)\s+(\d+)\s+(?:(?:дом|д)\s+)?(\d+)\s+(?:корпус|кор)\s+(\d+)'
     address = re.sub(pattern2, r'\2 корпус \3 строение \1', address, flags=re.IGNORECASE)
-    
+
     # ===== СПЕЦИАЛЬНЫЕ ПРАВИЛА ДЛЯ ТОЧЕК ВОКРУГ ЧИСЕЛ =====
     address = re.sub(r'(д|дом)\.(\d+)(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)\s+(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)[,\s]*(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(стр|строение)\.?\s*(\d+)[,\s]*(д|дом)\.?\s*(\d+)', r'\3 \4 \1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(стр|строение)\s+(\d+)[,\s]+(\d+)', r'дом \3 \1 \2', address, flags=re.IGNORECASE)
-    
+
     # ОБЩЕЕ ПРАВИЛО: удаляем точки между буквой и цифрой
     address = re.sub(r'([а-яa-z])\.(\d)', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d)\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-яa-z])\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
-    
+
     # ===== ОБРАБОТКА СОКРАЩЕНИЯ "с" (СТРОЕНИЕ) =====
     address = re.sub(r'(\d+)с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)\s+с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\s+(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
-    
+
     # ===== НОВЫЕ ПРАВИЛА ДЛЯ СЛИТНЫХ ФОРМ =====
     address = re.sub(r'(\d+)(стр|строение|корпус|к)(\d+)', r'\1 \2 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)(стр|строение|корпус|к)\.?(\d+)', r'\1 \2 \3', address, flags=re.IGNORECASE)
-    
+
     address = re.sub(r'(д|дом)(\d+)(стр|строение)(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.?(\d+)(стр|строение)\.?(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
-    
+
     # Добавляем пробелы между цифрами и буквами
     address = re.sub(r'(\d+)([а-яa-z]+)', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-яa-z]+)(\d+)', r'\1 \2', address, flags=re.IGNORECASE)
-    
+
     # Обработка обратного порядка "стр 4 д 11"
     address = re.sub(r'(стр|строение)\s+(\d+)\s+(д|дом)\s+(\d+)', r'\3 \4 \1 \2', address, flags=re.IGNORECASE)
-    
+
     # Удаляем запятые и лишние пробелы
     address = address.replace(',', ' ')
     address = re.sub(r'\s+', ' ', address)

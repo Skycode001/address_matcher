@@ -67,7 +67,7 @@ class AddressMatcher:
             return ""
         clean = re.sub(r'[^\w]', '', street_name.lower())
         return clean[:length]
-    
+
     def extract_building_number(self, address, building_type='строение'):
         """
         Извлекает номер строения или корпуса из адреса
@@ -75,10 +75,10 @@ class AddressMatcher:
         """
         if not address:
             return None
-        
+
         # Нормализуем адрес для поиска (но без полной нормализации, чтобы не потерять цифры)
         addr_lower = address.lower()
-        
+
         if building_type == 'строение':
             # Расширенные паттерны для строения (с учётом точек и разных вариантов)
             patterns = [
@@ -115,12 +115,12 @@ class AddressMatcher:
                 r'кп\s+(\d+)',
                 r'кп(\d+)',
             ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, addr_lower)
             if match:
                 return match.group(1)
-        
+
         return None
 
     def exact_match_search(self, query_normalized):
@@ -241,7 +241,7 @@ class AddressMatcher:
         # === 2. СТРОГАЯ ПРОВЕРКА СТРОЕНИЯ ===
         query_building = self.extract_building_number(query, 'строение')
         candidate_building = self.extract_building_number(candidate['address'], 'строение')
-        
+
         if query_building:
             if candidate_building:
                 if query_building != candidate_building:
@@ -260,7 +260,7 @@ class AddressMatcher:
         # === 3. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
         query_corpus = self.extract_building_number(query, 'корпус')
         candidate_corpus = self.extract_building_number(candidate['address'], 'корпус')
-        
+
         if query_corpus:
             if candidate_corpus:
                 if query_corpus != candidate_corpus:
