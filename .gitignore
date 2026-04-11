@@ -52,3 +52,4 @@ src/test_*.py
 # Ruff cache
 .ruff_cache/
 *.ruff_cache/
+src/batch_test.py
