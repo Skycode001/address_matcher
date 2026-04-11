@@ -76,11 +76,9 @@ class AddressMatcher:
         if not address:
             return None
 
-        # Нормализуем адрес для поиска (но без полной нормализации, чтобы не потерять цифры)
         addr_lower = address.lower()
 
         if building_type == 'строение':
-            # Расширенные паттерны для строения (с учётом точек и разных вариантов)
             patterns = [
                 r'строение\s+(\d+)',
                 r'строение(\d+)',
@@ -92,13 +90,14 @@ class AddressMatcher:
                 r'стр(\d+)',
                 r'стр\.\s*(\d+)',
                 r'стр\.(\d+)',
-                r'с\s+(\d+)',
+                r'\bс\s+(\d+)',
+                r'\bс(\d+)',
+                r'\bс\.\s*(\d+)',
+                r'\bс\.(\d+)',
                 r'с(\d+)',
-                r'с\.\s*(\d+)',
                 r'с\.(\d+)',
             ]
         else:  # корпус
-            # Расширенные паттерны для корпуса
             patterns = [
                 r'корпус\s+(\d+)',
                 r'корпус(\d+)',
@@ -245,16 +244,12 @@ class AddressMatcher:
         if query_building:
             if candidate_building:
                 if query_building != candidate_building:
-                    # Разные строения - исключаем
                     return 0.0
                 else:
-                    # Строения совпадают - бонус
                     features[6] = min(1.0, features[6] + 0.3)
             else:
-                # В запросе есть строение, в кандидате нет - исключаем
                 return 0.0
         elif candidate_building and not query_building:
-            # В кандидате есть строение, в запросе нет - штраф
             features[6] = features[6] * 0.3
 
         # === 3. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
@@ -264,16 +259,12 @@ class AddressMatcher:
         if query_corpus:
             if candidate_corpus:
                 if query_corpus != candidate_corpus:
-                    # Разные корпуса - исключаем
                     return 0.0
                 else:
-                    # Корпуса совпадают - бонус
                     features[6] = min(1.0, features[6] + 0.2)
             else:
-                # В запросе есть корпус, в кандидате нет - штраф
                 features[6] = features[6] * 0.5
         elif candidate_corpus and not query_corpus:
-            # В кандидате есть корпус, в запросе нет - штраф поменьше
             features[6] = features[6] * 0.7
 
         # === 4. Создаем копию признаков для модификации ===
