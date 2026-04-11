@@ -67,6 +67,61 @@ class AddressMatcher:
             return ""
         clean = re.sub(r'[^\w]', '', street_name.lower())
         return clean[:length]
+    
+    def extract_building_number(self, address, building_type='строение'):
+        """
+        Извлекает номер строения или корпуса из адреса
+        building_type: 'строение' или 'корпус'
+        """
+        if not address:
+            return None
+        
+        # Нормализуем адрес для поиска (но без полной нормализации, чтобы не потерять цифры)
+        addr_lower = address.lower()
+        
+        if building_type == 'строение':
+            # Расширенные паттерны для строения (с учётом точек и разных вариантов)
+            patterns = [
+                r'строение\s+(\d+)',
+                r'строение(\d+)',
+                r'строен\s+(\d+)',
+                r'строен(\d+)',
+                r'строен\.\s*(\d+)',
+                r'строен\.(\d+)',
+                r'стр\s+(\d+)',
+                r'стр(\d+)',
+                r'стр\.\s*(\d+)',
+                r'стр\.(\d+)',
+                r'с\s+(\d+)',
+                r'с(\d+)',
+                r'с\.\s*(\d+)',
+                r'с\.(\d+)',
+            ]
+        else:  # корпус
+            # Расширенные паттерны для корпуса
+            patterns = [
+                r'корпус\s+(\d+)',
+                r'корпус(\d+)',
+                r'корп\s+(\d+)',
+                r'корп(\d+)',
+                r'кор\.\s*(\d+)',
+                r'кор\.(\d+)',
+                r'кор\s+(\d+)',
+                r'кор(\d+)',
+                r'к\s+(\d+)',
+                r'к(\d+)',
+                r'к\.\s*(\d+)',
+                r'к\.(\d+)',
+                r'кп\s+(\d+)',
+                r'кп(\d+)',
+            ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, addr_lower)
+            if match:
+                return match.group(1)
+        
+        return None
 
     def exact_match_search(self, query_normalized):
         if not self.use_index:
@@ -107,26 +162,18 @@ class AddressMatcher:
         )
 
         # === ПРИОРИТЕТ ДЛЯ ЯВНОГО ТИПА УЛИЦЫ ===
-        # Проверяем ОРИГИНАЛЬНЫЙ запрос (не нормализованный)
         query_original_lower = query.lower().strip()
         if query_original_lower.startswith(('ул ', 'улица ')):
-            # Извлекаем название улицы из оригинального запроса
             match = re.search(r'(?:ул|улица)\s+([а-яА-ЯёЁ]+)', query_original_lower)
             if match:
-                street_name = match.group(1)  # "таллинская"
-
-                # Ищем адреса, где название улицы начинается с этого слова
+                street_name = match.group(1)
                 exact_street_matches = []
                 for idx, addr_norm in enumerate(self.normalized_addresses):
-                    # Получаем оригинальный адрес и извлекаем название улицы
                     addr_street = extract_street_name(self.addresses[idx]).lower()
-                    # Сравниваем начало
                     if addr_street.startswith(street_name):
                         exact_street_matches.append((addr_norm, 95, idx))
 
-                # Если нашли точные совпадения по названию улицы
                 if exact_street_matches:
-                    # Фильтруем результаты, оставляя только те, где название улицы совпадает
                     filtered_results = []
                     for addr_norm, score, idx in results:
                         addr_street = extract_street_name(self.addresses[idx]).lower()
@@ -189,32 +236,67 @@ class AddressMatcher:
             query_main = self.extract_house_main_number(query_house)
             cand_main = self.extract_house_main_number(candidate_house)
             if query_main and cand_main and query_main != cand_main:
-                return 0.0  # Разные основные номера - исключаем кандидата
+                return 0.0
 
-        # === 2. Создаем копию признаков для модификации ===
+        # === 2. СТРОГАЯ ПРОВЕРКА СТРОЕНИЯ ===
+        query_building = self.extract_building_number(query, 'строение')
+        candidate_building = self.extract_building_number(candidate['address'], 'строение')
+        
+        if query_building:
+            if candidate_building:
+                if query_building != candidate_building:
+                    # Разные строения - исключаем
+                    return 0.0
+                else:
+                    # Строения совпадают - бонус
+                    features[6] = min(1.0, features[6] + 0.3)
+            else:
+                # В запросе есть строение, в кандидате нет - исключаем
+                return 0.0
+        elif candidate_building and not query_building:
+            # В кандидате есть строение, в запросе нет - штраф
+            features[6] = features[6] * 0.3
+
+        # === 3. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
+        query_corpus = self.extract_building_number(query, 'корпус')
+        candidate_corpus = self.extract_building_number(candidate['address'], 'корпус')
+        
+        if query_corpus:
+            if candidate_corpus:
+                if query_corpus != candidate_corpus:
+                    # Разные корпуса - исключаем
+                    return 0.0
+                else:
+                    # Корпуса совпадают - бонус
+                    features[6] = min(1.0, features[6] + 0.2)
+            else:
+                # В запросе есть корпус, в кандидате нет - штраф
+                features[6] = features[6] * 0.5
+        elif candidate_corpus and not query_corpus:
+            # В кандидате есть корпус, в запросе нет - штраф поменьше
+            features[6] = features[6] * 0.7
+
+        # === 4. Создаем копию признаков для модификации ===
         modified_features = features.copy()
 
-        # === 3. Приоритет точного совпадения префикса улицы ===
+        # === 5. Приоритет точного совпадения префикса улицы ===
         query_prefix = self.extract_street_prefix(query_street, 5)
         cand_prefix = self.extract_street_prefix(candidate_street, 5)
 
         if query_prefix and cand_prefix:
             if query_prefix == cand_prefix:
-                # Префиксы совпадают - большой бонус
                 modified_features[1] = min(1.0, modified_features[1] + 0.3)
                 modified_features[4] = min(1.0, modified_features[4] + 0.2)
             elif query_prefix[0] != cand_prefix[0]:
-                # Первая буква разная - сильный штраф
                 modified_features[1] = modified_features[1] * 0.3
                 modified_features[4] = modified_features[4] * 0.3
 
-        # === 4. Если в запросе явно указан тип улицы ===
+        # === 6. Если в запросе явно указан тип улицы ===
         if has_explicit_type:
-            # Дополнительный бонус за точное совпадение
             if query_prefix == cand_prefix:
                 modified_features[1] = min(1.0, modified_features[1] + 0.2)
 
-        # === 5. Бонус за точное совпадение дома ===
+        # === 7. Бонус за точное совпадение дома ===
         if query_house and candidate_house:
             if query_house == candidate_house:
                 modified_features[6] = min(1.0, modified_features[6] + 0.3)
@@ -224,7 +306,7 @@ class AddressMatcher:
                 if query_main and cand_main and query_main == cand_main:
                     modified_features[6] = min(1.0, modified_features[6] + 0.15)
 
-        # === 6. Вычисляем взвешенную сумму ===
+        # === 8. Вычисляем взвешенную сумму ===
         score = sum(f * w for f, w in zip(modified_features, weights))
 
         return min(1.0, score)
@@ -232,7 +314,7 @@ class AddressMatcher:
     def find_best_match(self, query, top_n=20):
         query_normalized = normalize_address(query)
 
-        # Определяем, есть ли явный тип улицы в начале (по оригинальному запросу)
+        # Определяем, есть ли явный тип улицы в начале
         has_explicit_type = bool(re.search(r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р)', query.lower().strip()))
 
         exact_matches = self.exact_match_search(query_normalized)
@@ -245,7 +327,6 @@ class AddressMatcher:
         elif exact_matches and len(exact_matches) > 1:
             candidates = exact_matches
         else:
-            # Передаем оригинальный query и нормализованный
             candidates = self.fuzzy_search(query, query_normalized, top_n)
 
         if not candidates:
@@ -269,7 +350,6 @@ class AddressMatcher:
                 if candidate.get('exact_match', False):
                     candidate['final_score'] = 0.8 + 0.2 * hybrid_score
                 else:
-                    # Комбинируем fuzzy, ML и hybrid score
                     candidate['final_score'] = (
                         0.25 * (candidate['fuzzy_score'] / 100) +
                         0.35 * candidate['ml_score'] +
@@ -366,6 +446,7 @@ class AddressMatcher:
                 })
         return results
 
+
 def main():
     print("Загрузка базы адресов...")
     df = pd.read_csv('data/addresses.csv')
@@ -409,6 +490,7 @@ def main():
                 matcher.debug_fuzzy_search(debug_query)
         elif query:
             matcher.search(query)
+
 
 if __name__ == "__main__":
     main()
