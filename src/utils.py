@@ -1,7 +1,7 @@
 import re
 
 import pandas as pd
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 # Словарь сокращений (расширенный)
 ABBREVIATIONS = {
@@ -41,6 +41,23 @@ ABBREVIATIONS = {
     'литера': 'литера',
 }
 
+# Словарь типов улиц
+STREET_TYPES = {
+    'бульвар': ['бульвар', 'бул', 'бульв', 'б-р'],
+    'улица': ['улица', 'ул'],
+    'проспект': ['проспект', 'пр', 'пр-т'],
+    'переулок': ['переулок', 'пер'],
+    'площадь': ['площадь', 'пл'],
+    'набережная': ['набережная', 'наб'],
+    'шоссе': ['шоссе', 'ш'],
+    'проезд': ['проезд', 'пр-д'],
+    'тупик': ['тупик', 'туп'],
+}
+
+# Стоп-слова для извлечения названия улицы
+STOP_WORDS = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок', 
+              'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик'}
+
 # Фонетическая карта
 PHONETIC_MAP = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
@@ -63,6 +80,19 @@ def phonetic_normalize(text):
         else:
             result.append(char)
     return ''.join(result)[:10]
+
+def extract_street_name_from_normalized(normalized_address):
+    """
+    Извлекает название улицы из нормализованной строки
+    """
+    if not normalized_address:
+        return None
+    
+    words = normalized_address.split()
+    for word in words:
+        if word not in STOP_WORDS and not word.isdigit() and len(word) >= 3:
+            return word
+    return None
 
 def normalize_address(address):
     """
@@ -117,7 +147,6 @@ def normalize_address(address):
     )
 
     # ===== НОРМАЛИЗАЦИЯ СТРОЕНИЯ =====
-    # Приводим все варианты строения к единому формату "строение N"
     address = re.sub(r'строение(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен\.(\d+)', r'строение \1', address, flags=re.IGNORECASE)
@@ -127,7 +156,6 @@ def normalize_address(address):
     address = re.sub(r'с\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
 
     # ===== НОРМАЛИЗАЦИЯ КОРПУСА =====
-    # Приводим все варианты корпуса к единому формату "корпус N"
     address = re.sub(r'корпус(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
     address = re.sub(r'корп(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
     address = re.sub(r'кор\.(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
@@ -136,40 +164,38 @@ def normalize_address(address):
     address = re.sub(r'к\s+(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
 
     # ===== НОРМАЛИЗАЦИЯ ДОМА =====
-    # Приводим все варианты дома к единому формату "дом N"
     address = re.sub(r'д(\d+)', r'дом \1', address, flags=re.IGNORECASE)
     address = re.sub(r'д\.(\d+)', r'дом \1', address, flags=re.IGNORECASE)
 
-    # ===== ОБРАТНЫЙ ПОРЯДОК: "строение 4 корпус 1 15" -> "15 корпус 1 строение 4" (с домом) =====
+    # ===== ОБРАТНЫЙ ПОРЯДОК (с домом) =====
     pattern = r'(?:строение|стр)\s+(\d+)\s+(?:корпус|кор)\s+(\d+)\s+(?:(?:дом|д)\s+)?(\d+)'
     address = re.sub(pattern, r'\3 корпус \2 строение \1', address, flags=re.IGNORECASE)
 
     pattern2 = r'(?:строение|стр)\s+(\d+)\s+(?:(?:дом|д)\s+)?(\d+)\s+(?:корпус|кор)\s+(\d+)'
     address = re.sub(pattern2, r'\2 корпус \3 строение \1', address, flags=re.IGNORECASE)
 
-    # ===== СПЕЦИАЛЬНЫЕ ПРАВИЛА ДЛЯ ТОЧЕК ВОКРУГ ЧИСЕЛ =====
+    # ===== СПЕЦИАЛЬНЫЕ ПРАВИЛА ДЛЯ ТОЧЕК =====
     address = re.sub(r'(д|дом)\.(\d+)(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)\s+(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)[,\s]*(стр|строение)\.(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(стр|строение)\.?\s*(\d+)[,\s]*(д|дом)\.?\s*(\d+)', r'\3 \4 \1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(стр|строение)\s+(\d+)[,\s]+(\d+)', r'дом \3 \1 \2', address, flags=re.IGNORECASE)
 
-    # ОБЩЕЕ ПРАВИЛО: удаляем точки между буквой и цифрой
+    # Удаляем точки между буквой и цифрой
     address = re.sub(r'([а-яa-z])\.(\d)', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d)\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-яa-z])\.([а-яa-z])', r'\1 \2', address, flags=re.IGNORECASE)
 
-    # ===== ОБРАБОТКА СОКРАЩЕНИЯ "с" (СТРОЕНИЕ) =====
+    # ===== ОБРАБОТКА СОКРАЩЕНИЯ "с" =====
     address = re.sub(r'(\d+)с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)\s+с(\d+)', r'\1 стр \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\s+(\d+)с(\d+)', r'\1 \2 стр \3', address, flags=re.IGNORECASE)
 
-    # ===== НОВЫЕ ПРАВИЛА ДЛЯ СЛИТНЫХ ФОРМ =====
+    # ===== СЛИТНЫЕ ФОРМЫ =====
     address = re.sub(r'(\d+)(стр|строение|корпус|к)(\d+)', r'\1 \2 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)(стр|строение|корпус|к)\.?(\d+)', r'\1 \2 \3', address, flags=re.IGNORECASE)
-
     address = re.sub(r'(д|дом)(\d+)(стр|строение)(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.?(\d+)(стр|строение)\.?(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
 
@@ -184,30 +210,17 @@ def normalize_address(address):
     address = address.replace(',', ' ')
     address = re.sub(r'\s+', ' ', address)
 
-    # Словарь типов улиц
-    street_types = {
-        'бульвар': ['бульвар', 'бул', 'бульв', 'б-р'],
-        'улица': ['улица', 'ул'],
-        'проспект': ['проспект', 'пр', 'пр-т'],
-        'переулок': ['переулок', 'пер'],
-        'площадь': ['площадь', 'пл'],
-        'набережная': ['набережная', 'наб'],
-        'шоссе': ['шоссе', 'ш'],
-        'проезд': ['проезд', 'пр-д'],
-        'тупик': ['тупик', 'туп'],
-    }
-
     # Перестановка типа улицы из начала в конец
     words = address.split()
     if words:
         first_word = words[0].rstrip('.')
-        for main_type, variants in street_types.items():
+        for main_type, variants in STREET_TYPES.items():
             if first_word in variants:
                 remaining = ' '.join(words[1:])
                 address = f"{remaining} {main_type}"
                 break
 
-    # Обработка вариантов корпусов (дополнительная)
+    # Обработка вариантов корпусов
     address = re.sub(r'кор\.\s+(\d+)', r'корпус \1', address)
     address = re.sub(r'кор\.(\d+)', r'корпус \1', address)
     address = re.sub(r'кор\s+(\d+)', r'корпус \1', address)
@@ -223,17 +236,11 @@ def normalize_address(address):
     address = re.sub(r'(\d+)/(\d+)', r'\1 корпус \2', address)
     address = re.sub(r'(\d+)-(\d+)', r'\1 корпус \2', address)
 
-    # Дополнительная обработка для паттернов с пробелами
-    address = re.sub(r'(\s+)(\d+)\s+к(\d+)', r'\1дом \2 корпус \3', address)
-    address = re.sub(r'(\s+)(\d+)\s+к\s+(\d+)', r'\1дом \2 корпус \3', address)
+    # Дополнительная обработка для паттернов с пробелами (отключено)
+    # address = re.sub(r'(\s+)(\d+)\s+к(\d+)', r'\1дом \2 корпус \3', address)
+    # address = re.sub(r'(\s+)(\d+)\s+к\s+(\d+)', r'\1дом \2 корпус \3', address)
     address = re.sub(r'^(\d+)\s+к(\d+)', r'дом \1 корпус \2', address)
     address = re.sub(r'^(\d+)\s+к\s+(\d+)', r'дом \1 корпус \2', address)
-
-    # Добавляем "дом" перед числами, если его нет
-    if not re.search(r'(дом|д)\s*\d+', address):
-        address = re.sub(r'(\s+)(\d+)(\s+корпус|\s+$|$)', r'\1дом \2\3', address)
-        address = re.sub(r'^(\d+)(\s+корпус|\s+$|$)', r'дом \1\2', address)
-        address = re.sub(r'(\d+)(корпус)', r'дом \1 \2', address)
 
     # Нормализуем "д" в "дом"
     address = re.sub(r'д\s+(\d+)', r'дом \1', address)
@@ -248,7 +255,7 @@ def normalize_address(address):
 
     for word in words:
         replaced = False
-        for main_type, variants in street_types.items():
+        for main_type, variants in STREET_TYPES.items():
             if word in variants:
                 normalized_words.append(main_type)
                 replaced = True
@@ -262,6 +269,16 @@ def normalize_address(address):
 
     result = ' '.join(normalized_words)
     result = re.sub(r'\s+', ' ', result)
+
+    # Приводим к единому порядку: название в начале, тип в конце
+    words = result.split()
+    for i, word in enumerate(words):
+        if word in STREET_TYPES:
+            if i != len(words) - 1:
+                words.pop(i)
+                words.append(word)
+                result = ' '.join(words)
+            break
 
     return result
 
@@ -302,16 +319,14 @@ def extract_street_name(address):
     address = re.sub(r'\s*\d+(?:[а-я])?$', '', address)
 
     # Удаляем типы улиц для чистого названия
-    for word in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']:
+    for word in STREET_TYPES.keys():
         address = address.replace(word, '')
 
     street_name = address.strip()
 
-    # Если осталось слово из 3+ букв - возвращаем
     if len(street_name) >= 3:
         return street_name
 
-    # Иначе возвращаем исходную нормализованную строку
     return normalize_address(address).split()[0] if normalize_address(address).split() else ""
 
 def generate_features(query, candidate):
@@ -359,8 +374,8 @@ def generate_features(query, candidate):
 
     features.append(1 - abs(len(query) - len(candidate)) / max(len(query), len(candidate), 1))
 
-    query_type = 1 if any(x in query_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
-    cand_type = 1 if any(x in candidate_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
+    query_type = 1 if any(x in query_norm for x in STREET_TYPES.keys()) else 0
+    cand_type = 1 if any(x in candidate_norm for x in STREET_TYPES.keys()) else 0
     features.append(1 if query_type == cand_type else 0)
 
     return features

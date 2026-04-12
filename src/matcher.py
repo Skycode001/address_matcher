@@ -159,6 +159,28 @@ class AddressMatcher:
             limit=top_n,
             score_cutoff=50
         )
+        
+        # ===== БОНУС ЗА СОВПАДЕНИЕ НАЗВАНИЯ УЛИЦЫ =====
+        stop_words = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок', 
+                      'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик'}
+        
+        words = query_normalized.split()
+        street_name = None
+        for word in words:
+            if word not in stop_words and not word.isdigit() and len(word) >= 3:
+                street_name = word
+                break
+        
+        if street_name:
+            boosted_results = []
+            for addr_norm, score, idx in results:
+                if street_name in addr_norm:
+                    new_score = min(100, score + 15)
+                    boosted_results.append((addr_norm, new_score, idx))
+                else:
+                    boosted_results.append((addr_norm, score, idx))
+            boosted_results.sort(key=lambda x: x[1], reverse=True)
+            results = boosted_results
 
         # === ПРИОРИТЕТ ДЛЯ ЯВНОГО ТИПА УЛИЦЫ ===
         query_original_lower = query.lower().strip()
