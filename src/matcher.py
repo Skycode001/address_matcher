@@ -61,6 +61,16 @@ class AddressMatcher:
         match = re.match(r'(\d+)', str(house_number))
         return match.group(1) if match else None
 
+    def extract_house_letter_from_query(self, query):
+        """Извлекает буквенный индекс из сырого запроса (д.76б -> б)"""
+        match = re.search(r'д\.?\s*(\d+)([а-я])', query.lower())
+        return match.group(2) if match else None
+
+    def extract_house_letter_from_address(self, address):
+        """Извлекает буквенный индекс из адреса в базе (дом 76б -> б)"""
+        match = re.search(r'дом\s+(\d+)([а-я])', address.lower())
+        return match.group(2) if match else None
+
     def extract_street_prefix(self, street_name, length=5):
         """Извлекает префикс улицы для быстрого сравнения"""
         if not street_name:
@@ -159,18 +169,18 @@ class AddressMatcher:
             limit=top_n,
             score_cutoff=50
         )
-        
+
         # ===== БОНУС ЗА СОВПАДЕНИЕ НАЗВАНИЯ УЛИЦЫ =====
-        stop_words = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок', 
+        stop_words = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок',
                       'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик'}
-        
+
         words = query_normalized.split()
         street_name = None
         for word in words:
             if word not in stop_words and not word.isdigit() and len(word) >= 3:
                 street_name = word
                 break
-        
+
         if street_name:
             boosted_results = []
             for addr_norm, score, idx in results:
@@ -259,6 +269,18 @@ class AddressMatcher:
             if query_main and cand_main and query_main != cand_main:
                 return 0.0
 
+            # Проверка буквенного индекса (76б vs 76)
+            query_letter = self.extract_house_letter_from_query(query)
+            candidate_letter = self.extract_house_letter_from_address(candidate['address'])
+
+            if query_letter:
+                if candidate_letter:
+                    if query_letter != candidate_letter:
+                        return 0.0
+                else:
+                    # В запросе есть буква (76б), в кандидате нет (76) - исключаем
+                    return 0.0
+
         # === 2. СТРОГАЯ ПРОВЕРКА СТРОЕНИЯ ===
         query_building = self.extract_building_number(query, 'строение')
         candidate_building = self.extract_building_number(candidate['address'], 'строение')
@@ -272,7 +294,7 @@ class AddressMatcher:
             else:
                 return 0.0
         elif candidate_building and not query_building:
-            features[6] = features[6] * 0.3
+            return 0.0
 
         # === 3. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
         query_corpus = self.extract_building_number(query, 'корпус')
@@ -285,9 +307,9 @@ class AddressMatcher:
                 else:
                     features[6] = min(1.0, features[6] + 0.2)
             else:
-                features[6] = features[6] * 0.5
+                return 0.0
         elif candidate_corpus and not query_corpus:
-            features[6] = features[6] * 0.7
+            return 0.0
 
         # === 4. Создаем копию признаков для модификации ===
         modified_features = features.copy()

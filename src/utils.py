@@ -1,7 +1,7 @@
 import re
 
 import pandas as pd
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 
 # Словарь сокращений (расширенный)
 ABBREVIATIONS = {
@@ -41,23 +41,6 @@ ABBREVIATIONS = {
     'литера': 'литера',
 }
 
-# Словарь типов улиц
-STREET_TYPES = {
-    'бульвар': ['бульвар', 'бул', 'бульв', 'б-р'],
-    'улица': ['улица', 'ул'],
-    'проспект': ['проспект', 'пр', 'пр-т'],
-    'переулок': ['переулок', 'пер'],
-    'площадь': ['площадь', 'пл'],
-    'набережная': ['набережная', 'наб'],
-    'шоссе': ['шоссе', 'ш'],
-    'проезд': ['проезд', 'пр-д'],
-    'тупик': ['тупик', 'туп'],
-}
-
-# Стоп-слова для извлечения названия улицы
-STOP_WORDS = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок', 
-              'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик'}
-
 # Фонетическая карта
 PHONETIC_MAP = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
@@ -81,19 +64,6 @@ def phonetic_normalize(text):
             result.append(char)
     return ''.join(result)[:10]
 
-def extract_street_name_from_normalized(normalized_address):
-    """
-    Извлекает название улицы из нормализованной строки
-    """
-    if not normalized_address:
-        return None
-    
-    words = normalized_address.split()
-    for word in words:
-        if word not in STOP_WORDS and not word.isdigit() and len(word) >= 3:
-            return word
-    return None
-
 def normalize_address(address):
     """
     Универсальная нормализация адреса
@@ -102,6 +72,8 @@ def normalize_address(address):
         return ""
 
     address = str(address).lower().strip()
+
+    address = address.replace('ё', 'е')
 
     # ===== УНИВЕРСАЛЬНОЕ ПРАВИЛО ДЛЯ КОРПУСА И СТРОЕНИЯ =====
     address = re.sub(
@@ -210,11 +182,24 @@ def normalize_address(address):
     address = address.replace(',', ' ')
     address = re.sub(r'\s+', ' ', address)
 
+    # Словарь типов улиц
+    street_types = {
+        'бульвар': ['бульвар', 'бул', 'бульв', 'б-р'],
+        'улица': ['улица', 'ул'],
+        'проспект': ['проспект', 'пр', 'пр-т'],
+        'переулок': ['переулок', 'пер'],
+        'площадь': ['площадь', 'пл'],
+        'набережная': ['набережная', 'наб'],
+        'шоссе': ['шоссе', 'ш'],
+        'проезд': ['проезд', 'пр-д'],
+        'тупик': ['тупик', 'туп'],
+    }
+
     # Перестановка типа улицы из начала в конец
     words = address.split()
     if words:
         first_word = words[0].rstrip('.')
-        for main_type, variants in STREET_TYPES.items():
+        for main_type, variants in street_types.items():
             if first_word in variants:
                 remaining = ' '.join(words[1:])
                 address = f"{remaining} {main_type}"
@@ -255,7 +240,7 @@ def normalize_address(address):
 
     for word in words:
         replaced = False
-        for main_type, variants in STREET_TYPES.items():
+        for main_type, variants in street_types.items():
             if word in variants:
                 normalized_words.append(main_type)
                 replaced = True
@@ -273,7 +258,7 @@ def normalize_address(address):
     # Приводим к единому порядку: название в начале, тип в конце
     words = result.split()
     for i, word in enumerate(words):
-        if word in STREET_TYPES:
+        if word in street_types:
             if i != len(words) - 1:
                 words.pop(i)
                 words.append(word)
@@ -319,7 +304,7 @@ def extract_street_name(address):
     address = re.sub(r'\s*\d+(?:[а-я])?$', '', address)
 
     # Удаляем типы улиц для чистого названия
-    for word in STREET_TYPES.keys():
+    for word in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']:
         address = address.replace(word, '')
 
     street_name = address.strip()
@@ -374,8 +359,8 @@ def generate_features(query, candidate):
 
     features.append(1 - abs(len(query) - len(candidate)) / max(len(query), len(candidate), 1))
 
-    query_type = 1 if any(x in query_norm for x in STREET_TYPES.keys()) else 0
-    cand_type = 1 if any(x in candidate_norm for x in STREET_TYPES.keys()) else 0
+    query_type = 1 if any(x in query_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
+    cand_type = 1 if any(x in candidate_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
     features.append(1 if query_type == cand_type else 0)
 
     return features
