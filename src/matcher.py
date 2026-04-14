@@ -55,21 +55,21 @@ class AddressMatcher:
             self.model_loaded = False
 
     def extract_house_main_number(self, house_number):
-        """Извлекает основной номер дома (без корпуса)"""
+        """Извлекает основной номер дома (без корпуса и буквы)"""
         if not house_number:
             return None
         match = re.match(r'(\d+)', str(house_number))
         return match.group(1) if match else None
 
     def extract_house_letter_from_query(self, query):
-        """Извлекает буквенный индекс из сырого запроса (д.76б -> б)"""
-        match = re.search(r'д\.?\s*(\d+)([а-я])', query.lower())
+        """Извлекает буквенный индекс из сырого запроса (д.76б -> б, д.76нн -> нн)"""
+        match = re.search(r'д\.?\s*(\d+)([а-я]+)', query.lower())
         return match.group(2) if match else None
 
     def extract_house_letter_from_address(self, address):
-        """Извлекает буквенный индекс из адреса в базе (дом 76б -> б)"""
-        match = re.search(r'дом\s+(\d+)([а-я])', address.lower())
-        return match.group(2) if match else None
+        """Извлекает буквенный индекс из адреса в базе (дом 76б -> б, дом 76А -> А)"""
+        match = re.search(r'дом\s+(\d+)([а-яА-Я]+)', address.lower())
+        return match.group(2).lower() if match else None
 
     def extract_street_prefix(self, street_name, length=5):
         """Извлекает префикс улицы для быстрого сравнения"""
@@ -170,32 +170,11 @@ class AddressMatcher:
             score_cutoff=50
         )
 
-        # ===== БОНУС ЗА СОВПАДЕНИЕ НАЗВАНИЯ УЛИЦЫ =====
-        stop_words = {'дом', 'корпус', 'строение', 'улица', 'проспект', 'переулок',
-                      'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик'}
-
-        words = query_normalized.split()
-        street_name = None
-        for word in words:
-            if word not in stop_words and not word.isdigit() and len(word) >= 3:
-                street_name = word
-                break
-
-        if street_name:
-            boosted_results = []
-            for addr_norm, score, idx in results:
-                if street_name in addr_norm:
-                    new_score = min(100, score + 15)
-                    boosted_results.append((addr_norm, new_score, idx))
-                else:
-                    boosted_results.append((addr_norm, score, idx))
-            boosted_results.sort(key=lambda x: x[1], reverse=True)
-            results = boosted_results
-
         # === ПРИОРИТЕТ ДЛЯ ЯВНОГО ТИПА УЛИЦЫ ===
+        street_type_pattern = r'^(ул|улица|просп|пр-т|бульвар|б-р|пер|переулок|пл|площадь|наб|набережная|ш|шоссе)'
         query_original_lower = query.lower().strip()
-        if query_original_lower.startswith(('ул ', 'улица ')):
-            match = re.search(r'(?:ул|улица)\s+([а-яА-ЯёЁ]+)', query_original_lower)
+        if re.match(street_type_pattern, query_original_lower):
+            match = re.search(r'(?:ул|улица|просп|пр-т|бульвар|б-р|пер|переулок|пл|площадь|наб|набережная|ш|шоссе)\s+([а-яА-ЯёЁ]+)', query_original_lower)
             if match:
                 street_name = match.group(1)
                 exact_street_matches = []
@@ -216,11 +195,10 @@ class AddressMatcher:
                     else:
                         results = exact_street_matches
 
-        # Если ничего не найдено, пробуем поиск по ключевым словам
         if not results:
             words = query_normalized.split()
-            street_words = [w for w in words if w not in ['дом', 'корпус', 'улица', 'бульвар'] and not w.isdigit()]
-            numbers = [w for w in words if w.isdigit() or 'к' in w]
+            street_words = [w for w in words if w not in ['дом', 'корпус', 'строение', 'улица', 'бульвар'] and not w.isdigit()]
+            numbers = [w for w in words if w.isdigit() or 'к' in w or 'с' in w]
 
             if street_words and numbers:
                 street_query = ' '.join(street_words)
@@ -262,41 +240,34 @@ class AddressMatcher:
         # Базовые веса признаков
         weights = [0.20, 0.15, 0.10, 0.05, 0.05, 0.05, 0.20, 0.05, 0.05, 0.10]
 
-        # === 1. Быстрая фильтрация по номеру дома ===
+        # === 0. СТРОГАЯ ПРОВЕРКА НАЗВАНИЯ УЛИЦЫ ===
+        if query_street and candidate_street:
+            if query_street not in candidate_street and candidate_street not in query_street:
+                return 0.0
+
+        # === 1. СТРОГАЯ ПРОВЕРКА НОМЕРА ДОМА ===
         if query_house and candidate_house:
             query_main = self.extract_house_main_number(query_house)
             cand_main = self.extract_house_main_number(candidate_house)
+
             if query_main and cand_main and query_main != cand_main:
                 return 0.0
 
-            # Проверка буквенного индекса (76б vs 76)
+            if query_main and not cand_main:
+                return 0.0
+
+            # Проверка буквенного индекса
             query_letter = self.extract_house_letter_from_query(query)
             candidate_letter = self.extract_house_letter_from_address(candidate['address'])
 
             if query_letter:
                 if candidate_letter:
-                    if query_letter != candidate_letter:
+                    if query_letter.lower() != candidate_letter.lower():
                         return 0.0
                 else:
-                    # В запросе есть буква (76б), в кандидате нет (76) - исключаем
                     return 0.0
 
-        # === 2. СТРОГАЯ ПРОВЕРКА СТРОЕНИЯ ===
-        query_building = self.extract_building_number(query, 'строение')
-        candidate_building = self.extract_building_number(candidate['address'], 'строение')
-
-        if query_building:
-            if candidate_building:
-                if query_building != candidate_building:
-                    return 0.0
-                else:
-                    features[6] = min(1.0, features[6] + 0.3)
-            else:
-                return 0.0
-        elif candidate_building and not query_building:
-            return 0.0
-
-        # === 3. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
+        # === 2. СТРОГАЯ ПРОВЕРКА КОРПУСА ===
         query_corpus = self.extract_building_number(query, 'корпус')
         candidate_corpus = self.extract_building_number(candidate['address'], 'корпус')
 
@@ -304,53 +275,57 @@ class AddressMatcher:
             if candidate_corpus:
                 if query_corpus != candidate_corpus:
                     return 0.0
-                else:
-                    features[6] = min(1.0, features[6] + 0.2)
             else:
                 return 0.0
-        elif candidate_corpus and not query_corpus:
-            return 0.0
 
-        # === 4. Создаем копию признаков для модификации ===
+        # === 3. СТРОГАЯ ПРОВЕРКА СТРОЕНИЯ ===
+        query_building = self.extract_building_number(query, 'строение')
+        candidate_building = self.extract_building_number(candidate['address'], 'строение')
+
+        if query_building:
+            if candidate_building:
+                if query_building != candidate_building:
+                    return 0.0
+            else:
+                return 0.0
+
+        # === 4. Создаем копию признаков ===
         modified_features = features.copy()
 
-        # === 5. Приоритет точного совпадения префикса улицы ===
+        # === 5. Бонус за точное совпадение дома ===
+        if query_house and candidate_house and query_house == candidate_house:
+            modified_features[6] = min(1.0, modified_features[6] + 0.4)
+
+        # === 6. Бонус за точное совпадение названия улицы ===
+        if query_street and candidate_street and query_street == candidate_street:
+            modified_features[1] = min(1.0, modified_features[1] + 0.3)
+            modified_features[4] = min(1.0, modified_features[4] + 0.2)
+
+        # === 7. Приоритет префикса улицы ===
         query_prefix = self.extract_street_prefix(query_street, 5)
         cand_prefix = self.extract_street_prefix(candidate_street, 5)
-
         if query_prefix and cand_prefix:
             if query_prefix == cand_prefix:
-                modified_features[1] = min(1.0, modified_features[1] + 0.3)
-                modified_features[4] = min(1.0, modified_features[4] + 0.2)
+                modified_features[1] = min(1.0, modified_features[1] + 0.2)
+                modified_features[4] = min(1.0, modified_features[4] + 0.1)
             elif query_prefix[0] != cand_prefix[0]:
                 modified_features[1] = modified_features[1] * 0.3
                 modified_features[4] = modified_features[4] * 0.3
 
-        # === 6. Если в запросе явно указан тип улицы ===
+        # === 8. Если в запросе явно указан тип улицы ===
         if has_explicit_type:
             if query_prefix == cand_prefix:
                 modified_features[1] = min(1.0, modified_features[1] + 0.2)
 
-        # === 7. Бонус за точное совпадение дома ===
-        if query_house and candidate_house:
-            if query_house == candidate_house:
-                modified_features[6] = min(1.0, modified_features[6] + 0.3)
-            else:
-                query_main = self.extract_house_main_number(query_house)
-                cand_main = self.extract_house_main_number(candidate_house)
-                if query_main and cand_main and query_main == cand_main:
-                    modified_features[6] = min(1.0, modified_features[6] + 0.15)
-
-        # === 8. Вычисляем взвешенную сумму ===
+        # === 9. Вычисляем взвешенную сумму ===
         score = sum(f * w for f, w in zip(modified_features, weights))
-
         return min(1.0, score)
 
     def find_best_match(self, query, top_n=20):
         query_normalized = normalize_address(query)
 
-        # Определяем, есть ли явный тип улицы в начале
-        has_explicit_type = bool(re.search(r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р)', query.lower().strip()))
+        street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
+        has_explicit_type = bool(re.search(street_type_pattern, query.lower().strip()))
 
         exact_matches = self.exact_match_search(query_normalized)
 
@@ -365,6 +340,65 @@ class AddressMatcher:
             candidates = self.fuzzy_search(query, query_normalized, top_n)
 
         if not candidates:
+            return []
+
+        # Жёсткая фильтрация кандидатов
+        filtered_candidates = []
+        query_house = extract_house_number(query)
+        query_main = self.extract_house_main_number(query_house) if query_house else None
+        query_letter = self.extract_house_letter_from_query(query)
+        query_corpus = self.extract_building_number(query, 'корпус')
+        query_building = self.extract_building_number(query, 'строение')
+        query_street = extract_street_name(query)
+
+        for candidate in candidates:
+            cand_house = extract_house_number(candidate['address'])
+            cand_main = self.extract_house_main_number(cand_house) if cand_house else None
+            cand_letter = self.extract_house_letter_from_address(candidate['address'])
+            cand_corpus = self.extract_building_number(candidate['address'], 'корпус')
+            cand_building = self.extract_building_number(candidate['address'], 'строение')
+            cand_street = extract_street_name(candidate['address'])
+
+            # Проверка номера дома
+            if query_main and cand_main and query_main != cand_main:
+                continue
+            if query_main and not cand_main:
+                continue
+
+            # Проверка буквенного индекса
+            if query_letter:
+                if cand_letter:
+                    if query_letter.lower() != cand_letter.lower():
+                        continue
+                else:
+                    continue
+
+            # Проверка корпуса
+            if query_corpus:
+                if cand_corpus:
+                    if query_corpus != cand_corpus:
+                        continue
+                else:
+                    continue
+
+            # Проверка строения
+            if query_building:
+                if cand_building:
+                    if query_building != cand_building:
+                        continue
+                else:
+                    continue
+
+            # Проверка названия улицы
+            if query_street and cand_street:
+                if query_street not in cand_street and cand_street not in query_street:
+                    continue
+
+            filtered_candidates.append(candidate)
+
+        if filtered_candidates:
+            candidates = filtered_candidates
+        else:
             return []
 
         if self.model_loaded and len(candidates) > 0:
@@ -385,9 +419,10 @@ class AddressMatcher:
                 if candidate.get('exact_match', False):
                     candidate['final_score'] = 0.8 + 0.2 * hybrid_score
                 else:
+                    ml_weight = 0.35 if candidate['ml_score'] > 0.3 else 0.15
                     candidate['final_score'] = (
                         0.25 * (candidate['fuzzy_score'] / 100) +
-                        0.35 * candidate['ml_score'] +
+                        ml_weight * candidate['ml_score'] +
                         0.40 * hybrid_score
                     )
 
@@ -447,6 +482,10 @@ class AddressMatcher:
             return None
 
         best = candidates[0]
+
+        if best['final_score'] < 0.4:
+            print("Ничего не найдено (низкая уверенность)")
+            return None
 
         if best['final_score'] < 0.6 and len(candidates) > 1:
             print("⚠️ Низкая уверенность. Возможные варианты:")
