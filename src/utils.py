@@ -73,8 +73,13 @@ def normalize_address(address):
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
 
-    # ===== ОБРАБОТКА СЛИТНЫХ ФОРМ (САМЫЙ ПЕРВЫЙ ПРИОРИТЕТ) =====
-    # Слитные формы с "корпус" и "строение" (с пробелом или без)
+    # ===== СОХРАНЯЕМ БУКВЕННЫЕ ИНДЕКСЫ (САМЫЙ ПЕРВЫЙ ПРИОРИТЕТ) =====
+    # "6а" -> "6а" (оставляем слитно)
+    address = re.sub(r'(\d+)\s+([а-я])', r'\1\2', address, flags=re.IGNORECASE)
+    address = re.sub(r'(\d+)-([а-я])', r'\1\2', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА СЛИТНЫХ ФОРМ =====
+    # Слитные формы с "корпус" и "строение"
     address = re.sub(r'(\d+)корпус(\d+)', r'дом \1 корпус \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)\s+корпус(\d+)', r'\1 корпус \2', address, flags=re.IGNORECASE)
     address = re.sub(r'корпус(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
@@ -109,7 +114,7 @@ def normalize_address(address):
     address = re.sub(r'строение\s+(\d+)\s+корпус\s+(\d+)\s+(\d+)', r'\3 корпус \2 строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'стр\s+(\d+)\s+кор\s+(\d+)\s+(\d+)', r'\3 корпус \2 строение \1', address, flags=re.IGNORECASE)
 
-    # ===== НОРМАЛИЗАЦИЯ СТРОЕНИЯ =====
+    # ===== НОРМАЛИЗАЦИЯ СТРОЕНИЯ (БЕЗ ЗАДЕВАНИЯ "КОРПУС") =====
     address = re.sub(r'строение(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен\.(\d+)', r'строение \1', address, flags=re.IGNORECASE)
@@ -118,8 +123,9 @@ def normalize_address(address):
     address = re.sub(r'стр\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'строен\.\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
-    address = re.sub(r'\bс\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
-    address = re.sub(r'\bс(\d+)', r'строение \1', address, flags=re.IGNORECASE)
+    # Отдельно стоящее "с" - только если перед ним не буква (чтобы не задеть "корпус")
+    address = re.sub(r'(?<!\w)с\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
+    address = re.sub(r'(?<!\w)с(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'с\s+(\d+)', r'строение \1', address, flags=re.IGNORECASE)
 
     # ===== НОРМАЛИЗАЦИЯ КОРПУСА =====
@@ -165,9 +171,9 @@ def normalize_address(address):
     address = re.sub(r'(д|дом)(\d+)(стр|строение)(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
     address = re.sub(r'(д|дом)\.?(\d+)(стр|строение)\.?(\d+)', r'\1 \2 \3 \4', address, flags=re.IGNORECASE)
 
-    # Добавляем пробелы между цифрами и буквами
-    address = re.sub(r'(\d+)([а-яa-z]+)', r'\1 \2', address, flags=re.IGNORECASE)
-    address = re.sub(r'([а-яa-z]+)(\d+)', r'\1 \2', address, flags=re.IGNORECASE)
+    # Добавляем пробелы между цифрами и буквами (НО не разбиваем буквенные индексы)
+    address = re.sub(r'(\d+)([а-яa-z]{2,})', r'\1 \2', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-яa-z]{2,})(\d+)', r'\1 \2', address, flags=re.IGNORECASE)
 
     # Обработка обратного порядка "стр 4 д 11"
     address = re.sub(r'(стр|строение)\s+(\d+)\s+(д|дом)\s+(\d+)', r'\3 \4 \1 \2', address, flags=re.IGNORECASE)
@@ -221,14 +227,16 @@ def normalize_address(address):
     address = re.sub(r'^(\d+)\s+к(\d+)', r'дом \1 корпус \2', address)
     address = re.sub(r'^(\d+)\s+к\s+(\d+)', r'дом \1 корпус \2', address)
 
-    # ===== ДОБАВЛЯЕМ "дом" ПЕРЕД ЧИСЛАМИ, ЕСЛИ ЕГО НЕТ (универсальное правило) =====
+    # ===== ДОБАВЛЯЕМ "дом" ПЕРЕД ЧИСЛАМИ, ЕСЛИ ЕГО НЕТ =====
     words = address.split()
     new_words = []
     i = 0
     while i < len(words):
         word = words[i]
+        # Проверяем, что слово похоже на число (цифры и возможно одна буква в конце)
         if re.match(r'^\d+[а-я]?$', word):
-            if i == 0 or (words[i-1] not in ['дом', 'д']):
+            # Не добавляем "дом", если перед ним уже есть "дом", "д", "строение" или "корпус"
+            if i == 0 or (words[i-1] not in ['дом', 'д', 'строение', 'корпус']):
                 new_words.append('дом')
         new_words.append(word)
         i += 1
@@ -284,7 +292,7 @@ def extract_house_number(address):
         r'(\d+(?:[а-я])?)к(\d+(?:[а-я])?)',
         r'(\d+(?:[а-я])?)/(\d+(?:[а-я])?)',
         r'(\d+(?:[а-я])?)-(\d+(?:[а-я])?)',
-        r'(\d+[а-я])',
+        r'(\d+[а-я])',          # буквенный индекс (6а, 6б)
         r'\b(\d+(?:[а-я])?)\b',
     ]
 
