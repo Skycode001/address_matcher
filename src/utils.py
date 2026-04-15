@@ -73,6 +73,31 @@ def normalize_address(address):
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
 
+    # ===== ПЕРЕСТАНОВКА: "парковая 15-я" -> "15-я парковая" =====
+    # "парковая 15-я ул." -> "15-я парковая ул."
+    address = re.sub(r'([а-я]+)\s+(\d+)-я\s+(ул|улица|проспект|бульвар|переулок|шоссе|набережная|проезд|тупик)',
+                     r'\2-я \1 \3', address, flags=re.IGNORECASE)
+    # "парковая 15-я дом" -> "15-я парковая дом"
+    address = re.sub(r'([а-я]+)\s+(\d+)-я\s+дом',
+                     r'\2-я \1 дом', address, flags=re.IGNORECASE)
+    # "парковая 15-я" (без типа) -> "15-я парковая"
+    address = re.sub(r'([а-я]+)\s+(\d+)-я\b',
+                     r'\2-я \1', address, flags=re.IGNORECASE)
+
+    # То же самое для "15-й" (мужской род, для проспектов, переулков)
+    address = re.sub(r'([а-я]+)\s+(\d+)-й\s+(проспект|бульвар|переулок|проезд|тупик)',
+                     r'\2-й \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(\d+)-й\s+дом',
+                     r'\2-й \1 дом', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(\d+)-й\b',
+                     r'\2-й \1', address, flags=re.IGNORECASE)
+
+    # ===== ЯВНАЯ ОБРАБОТКА "д13" -> "дом 13", "к2" -> "корпус 2" =====
+    address = re.sub(r'\bд(\d+)\b', r'дом \1', address, flags=re.IGNORECASE)
+    address = re.sub(r'д\.(\d+)', r'дом \1', address, flags=re.IGNORECASE)
+    address = re.sub(r'\bк(\d+)\b', r'корпус \1', address, flags=re.IGNORECASE)
+    address = re.sub(r'к\.(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
+
     # ===== СОХРАНЯЕМ БУКВЕННЫЕ ИНДЕКСЫ (САМЫЙ ПЕРВЫЙ ПРИОРИТЕТ) =====
     # "6а" -> "6а" (оставляем слитно)
     address = re.sub(r'(\d+)\s+([а-я])', r'\1\2', address, flags=re.IGNORECASE)
