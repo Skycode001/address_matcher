@@ -12,6 +12,8 @@ ABBREVIATIONS = {
     'проспект': 'проспект',
     'просп': 'проспект',
     'просп.': 'проспект',
+    'пр-д': 'проезд',
+    'проезд': 'проезд',
     'пер': 'переулок',
     'переулок': 'переулок',
     'пл': 'площадь',
@@ -76,14 +78,13 @@ def normalize_address(address):
     if pd.isna(address):
         return ""
 
-    # original = address
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
 
-    # ОТЛАДКА ВКЛЮЧЕНА
-    # print(f"\n  [DEBUG] === НОРМАЛИЗАЦИЯ АДРЕСА ===")
-    # print(f"  [DEBUG] Вход: '{original}'")
-    # print(f"  [DEBUG] После приведения к нижнему регистру: '{address}'")
+    # ===== СПЕЦИАЛЬНАЯ ОБРАБОТКА "пр-д" ДО ВСЕХ ОСТАЛЬНЫХ ЗАМЕН =====
+    # Заменяем "пр-д" на "проезд" (это должно быть самым первым правилом)
+    address = re.sub(r'\bпр-д\b', r'проезд', address, flags=re.IGNORECASE)
+    address = re.sub(r'\bпр-д\.', r'проезд', address, flags=re.IGNORECASE)
 
     # ===== ПЕРЕСТАНОВКА: "парковая 15-я" -> "15-я парковая" =====
     address = re.sub(r'([а-я]+)\s+(\d+)-я\s+(ул|улица|проспект|бульвар|переулок|шоссе|набережная|проезд|тупик)',
@@ -286,18 +287,16 @@ def normalize_address(address):
     address = address.replace(',', ' ')
     address = re.sub(r'\s+', ' ', address)
 
-    # print(f"  [DEBUG] После базовых замен: '{address}'")
-
     # Словарь типов улиц
     street_types = {
         'бульвар': ['бульвар', 'бул', 'бульв', 'б-р'],
         'улица': ['улица', 'ул'],
         'проспект': ['проспект', 'пр', 'пр-т'],
+        'проезд': ['проезд', 'пр-д'],
         'переулок': ['переулок', 'пер'],
         'площадь': ['площадь', 'пл'],
         'набережная': ['набережная', 'наб'],
         'шоссе': ['шоссе', 'ш'],
-        'проезд': ['проезд', 'пр-д'],
         'тупик': ['тупик', 'туп'],
     }
 
@@ -310,8 +309,6 @@ def normalize_address(address):
                 remaining = ' '.join(words[1:])
                 address = f"{remaining} {main_type}"
                 break
-
-    # print(f"  [DEBUG] После перестановки типа улицы: '{address}'")
 
     # Обработка вариантов корпусов
     address = re.sub(r'кор\.\s+(\d+)', r'корпус \1', address)
@@ -333,7 +330,11 @@ def normalize_address(address):
     address = re.sub(r'^(\d+)\s+к(\d+)', r'дом \1 корпус \2', address)
     address = re.sub(r'^(\d+)\s+к\s+(\d+)', r'дом \1 корпус \2', address)
 
-    # print(f"  [DEBUG] После обработки корпусов: '{address}'")
+    # ===== УДАЛЯЕМ ДУБЛИРУЮЩИЕСЯ "дом" И "корпус" =====
+    address = re.sub(r'дом\s+дом', r'дом', address)
+    address = re.sub(r'корпус\s+дом', r'корпус', address)
+    address = re.sub(r'строение\s+дом', r'строение', address)
+    address = re.sub(r'дом\s+корпус\s+дом', r'дом корпус', address)
 
     # ===== ДОБАВЛЯЕМ "дом" ПЕРЕД ЧИСЛАМИ, ЕСЛИ ЕГО НЕТ =====
     words = address.split()
@@ -343,11 +344,18 @@ def normalize_address(address):
         word = words[i]
         if re.match(r'^\d+[а-я]?$', word):
             is_ordinal = re.match(r'^\d+[яй]$', word)
-            if not is_ordinal and (i == 0 or (words[i-1] not in ['дом', 'д', 'строение', 'корпус'])):
-                new_words.append('дом')
+            if not is_ordinal:
+                # Проверяем, что перед числом нет "дом"
+                if i == 0 or (words[i-1] not in ['дом', 'д', 'строение', 'корпус', 'к']):
+                    new_words.append('дом')
         new_words.append(word)
         i += 1
     address = ' '.join(new_words)
+
+    # Снова удаляем дубли после добавления
+    address = re.sub(r'дом\s+дом', r'дом', address)
+    address = re.sub(r'корпус\s+дом', r'корпус', address)
+    address = re.sub(r'строение\s+дом', r'строение', address)
 
     # Нормализуем "д" в "дом"
     address = re.sub(r'д\s+(\d+)', r'дом \1', address)
@@ -355,8 +363,6 @@ def normalize_address(address):
     # Удаляем лишние символы
     address = re.sub(r'[^\w\s]', ' ', address)
     address = re.sub(r'\s+', ' ', address)
-
-    # print(f"  [DEBUG] После добавления 'дом': '{address}'")
 
     # Заменяем сокращения
     words = address.split()
@@ -387,7 +393,6 @@ def normalize_address(address):
                 result = ' '.join(words)
             break
 
-    # print(f"  [DEBUG] Выход: '{result}'")
     return result
 
 
@@ -424,7 +429,7 @@ def extract_street_name(address):
     address = re.sub(r'\s*д\.?\s*\d+(?:[а-я])?(?:\s*к\.?\s*\d+(?:[а-я])?)?', '', address)
     address = re.sub(r'\s*\d+(?:[а-я])?к\d+(?:[а-я])?', '', address)
     address = re.sub(r'\s*\d+(?:[а-я])?$', '', address)
-    for word in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']:
+    for word in ['улица', 'проспект', 'проезд', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'тупик']:
         address = address.replace(word, '')
     street_name = address.strip()
     if len(street_name) >= 3:
@@ -475,8 +480,8 @@ def generate_features(query, candidate):
 
     features.append(1 - abs(len(query) - len(candidate)) / max(len(query), len(candidate), 1))
 
-    query_type = 1 if any(x in query_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
-    cand_type = 1 if any(x in candidate_norm for x in ['улица', 'проспект', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'проезд', 'тупик']) else 0
+    query_type = 1 if any(x in query_norm for x in ['улица', 'проспект', 'проезд', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'тупик']) else 0
+    cand_type = 1 if any(x in candidate_norm for x in ['улица', 'проспект', 'проезд', 'переулок', 'площадь', 'бульвар', 'набережная', 'шоссе', 'тупик']) else 0
     features.append(1 if query_type == cand_type else 0)
 
     return features
