@@ -124,6 +124,12 @@ class AddressMatcher:
 
         return None
 
+    def extract_all_digits(self, text):
+        """Извлекает все цифры из строки в виде строки (для сравнения)"""
+        if not text:
+            return ""
+        return ''.join(re.findall(r'\d+', text))
+
     def exact_match_search(self, query_normalized):
         if not self.use_index:
             return None
@@ -231,6 +237,19 @@ class AddressMatcher:
             if query_street not in candidate_street and candidate_street not in query_street:
                 return 0.0
 
+        # === НОВАЯ ПРОВЕРКА ЦИФРОВЫХ ПОСЛЕДОВАТЕЛЬНОСТЕЙ ===
+        query_digits = self.extract_all_digits(query)
+        candidate_digits = self.extract_all_digits(candidate['address'])
+        if query_digits and candidate_digits:
+            # Если цифры не совпадают (игнорируем порядок? Лучше сравнивать как строки)
+            if query_digits != candidate_digits:
+                # Сильно штрафуем, но не исключаем полностью
+                features[6] = features[6] * 0.1
+                # Дополнительно уменьшим итоговый score через модификацию весов?
+                # Пока просто вернём низкий score, но не 0, чтобы не отсечь возможные правильные варианты с опечатками
+                # Но в данном случае лучше исключить, так как цифры разные
+                return 0.0  # Жёсткое исключение при несовпадении всех цифр
+
         if query_house and candidate_house:
             query_main = self.extract_house_main_number(query_house)
             cand_main = self.extract_house_main_number(candidate_house)
@@ -325,6 +344,7 @@ class AddressMatcher:
         query_corpus = self.extract_building_number(query, 'корпус')
         query_building = self.extract_building_number(query, 'строение')
         query_street = extract_street_name(query)
+        query_digits = self.extract_all_digits(query)
 
         for candidate in candidates:
             cand_house = extract_house_number(candidate['address'])
@@ -333,6 +353,11 @@ class AddressMatcher:
             cand_corpus = self.extract_building_number(candidate['address'], 'корпус')
             cand_building = self.extract_building_number(candidate['address'], 'строение')
             cand_street = extract_street_name(candidate['address'])
+            cand_digits = self.extract_all_digits(candidate['address'])
+
+            # Проверка цифровых последовательностей
+            if query_digits and cand_digits and query_digits != cand_digits:
+                continue  # исключаем кандидата, если цифры не совпадают
 
             # Проверка номера дома
             if query_main is not None:
@@ -340,7 +365,6 @@ class AddressMatcher:
                     continue
                 if cand_main != query_main:
                     continue
-            # Если query_main is None, не проверяем
 
             if query_letter:
                 if cand_letter:
