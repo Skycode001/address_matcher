@@ -40,6 +40,11 @@ class AddressMatcher:
                     if street_only != norm_addr:
                         self.index[street_only].append(idx)
 
+                    # Добавляем отдельные слова в индекс для быстрого поиска
+                    for word in norm_addr.split():
+                        if len(word) >= 4:
+                            self.index[word].append(idx)
+
             print(f"Индекс создан: {len(self.index)} уникальных ключей")
 
         try:
@@ -61,11 +66,16 @@ class AddressMatcher:
         return match.group(1) if match else None
 
     def extract_house_letter_from_query(self, query):
-        match = re.search(r'д\.?\s*(\d+)([а-я]+)', query.lower())
+        """Извлекает буквенный индекс из сырого запроса (д.22а -> а, д.76нн -> нн)"""
+        match = re.search(r'(\d+)([а-я]+)', query.lower())
         return match.group(2) if match else None
 
     def extract_house_letter_from_address(self, address):
+        """Извлекает буквенный индекс из адреса в базе (дом 22а -> а, дом 76А -> А)"""
         match = re.search(r'дом\s+(\d+)([а-яА-Я]+)', address.lower())
+        if match:
+            return match.group(2).lower()
+        match = re.search(r'(\d+)([а-яА-Я]+)$', address.lower())
         return match.group(2).lower() if match else None
 
     def extract_street_prefix(self, street_name, length=5):
@@ -130,6 +140,23 @@ class AddressMatcher:
             return ""
         return ''.join(re.findall(r'\d+', text))
 
+    def has_house_number(self, query):
+        """
+        Проверяет, есть ли в запросе номер дома.
+        Учитывает, что "1-я", "2-я", "3-й" и т.д. - это часть названия улицы, а не номер дома.
+        """
+        query_lower = query.lower()
+
+        # Исключаем порядковые числительные (1-я, 2-я, 3-я, 1-й, 2-й, 3-й, 1-е, 2-е, 3-е)
+        # Они являются частью названия улицы, например "1-я Парковая улица"
+        if re.search(r'\b\d+[яйе]-\s*[а-я]', query_lower):
+            # Удаляем порядковое числительное из запроса и проверяем, остались ли цифры
+            remaining = re.sub(r'\b\d+[яйе]-\s*[а-я]+', '', query_lower)
+            return bool(re.search(r'\d+', remaining))
+
+        # Стандартная проверка на наличие цифр
+        return bool(re.search(r'\d+', query))
+
     def exact_match_search(self, query_normalized):
         if not self.use_index:
             return None
@@ -160,8 +187,38 @@ class AddressMatcher:
         return None
 
     def fuzzy_search(self, query, query_normalized, query_house=None, top_n=20):
+        # Если нормализованная строка слишком короткая, используем оригинальный запрос
+        search_query = query_normalized
+        if len(search_query) < 5:
+            search_query = query.lower()
+
+        # Пытаемся быстро найти кандидатов по ключевым словам из индекса
+        words = search_query.split()
+        candidate_indices = set()
+
+        # Ищем по словам длиной >= 4 (названия улиц)
+        for word in words:
+            if len(word) >= 4 and word in self.index:
+                for idx in self.index[word][:100]:  # Ограничиваем количество
+                    candidate_indices.add(idx)
+
+        # Если нашли кандидатов по индексу, используем их
+        if candidate_indices:
+            candidates = []
+            for idx in candidate_indices:
+                candidates.append({
+                    'index': idx,
+                    'address': self.addresses[idx],
+                    'unom': self.unoms[idx],
+                    'id': self.ids[idx],
+                    'fuzzy_score': 85,
+                    'exact_match': False
+                })
+            return candidates[:top_n]
+
+        # Иначе стандартный fuzzy поиск
         results = process.extract(
-            query_normalized,
+            search_query,
             self.normalized_addresses,
             scorer=fuzz.ratio,
             limit=top_n,
@@ -193,7 +250,7 @@ class AddressMatcher:
                         results = exact_street_matches
 
         if not results:
-            words = query_normalized.split()
+            words = search_query.split()
             street_words = [w for w in words if w not in ['дом', 'корпус', 'строение', 'улица', 'бульвар'] and not w.isdigit()]
             numbers = [w for w in words if w.isdigit() or 'к' in w or 'с' in w]
 
@@ -237,18 +294,11 @@ class AddressMatcher:
             if query_street not in candidate_street and candidate_street not in query_street:
                 return 0.0
 
-        # === НОВАЯ ПРОВЕРКА ЦИФРОВЫХ ПОСЛЕДОВАТЕЛЬНОСТЕЙ ===
         query_digits = self.extract_all_digits(query)
         candidate_digits = self.extract_all_digits(candidate['address'])
         if query_digits and candidate_digits:
-            # Если цифры не совпадают (игнорируем порядок? Лучше сравнивать как строки)
             if query_digits != candidate_digits:
-                # Сильно штрафуем, но не исключаем полностью
-                features[6] = features[6] * 0.1
-                # Дополнительно уменьшим итоговый score через модификацию весов?
-                # Пока просто вернём низкий score, но не 0, чтобы не отсечь возможные правильные варианты с опечатками
-                # Но в данном случае лучше исключить, так как цифры разные
-                return 0.0  # Жёсткое исключение при несовпадении всех цифр
+                return 0.0
 
         if query_house and candidate_house:
             query_main = self.extract_house_main_number(query_house)
@@ -269,6 +319,8 @@ class AddressMatcher:
                         return 0.0
                 else:
                     return 0.0
+            elif candidate_letter and not query_letter:
+                features[6] = features[6] * 0.3
 
         query_corpus = self.extract_building_number(query, 'корпус')
         candidate_corpus = self.extract_building_number(candidate['address'], 'корпус')
@@ -355,11 +407,9 @@ class AddressMatcher:
             cand_street = extract_street_name(candidate['address'])
             cand_digits = self.extract_all_digits(candidate['address'])
 
-            # Проверка цифровых последовательностей
             if query_digits and cand_digits and query_digits != cand_digits:
-                continue  # исключаем кандидата, если цифры не совпадают
+                continue
 
-            # Проверка номера дома
             if query_main is not None:
                 if cand_main is None:
                     continue
@@ -468,6 +518,13 @@ class AddressMatcher:
         import time
         start_time = time.time()
 
+        # Проверяем, есть ли в запросе номер дома
+        # "1-я Парковая улица" - есть цифра, но это часть названия, поэтому разрешаем поиск
+        # "таллинская" - нет цифр, отклоняем
+        if not self.has_house_number(query):
+            print("Ничего не найдено (в запросе отсутствует номер дома)")
+            return None
+
         candidates = self.find_best_match(query)
 
         elapsed_time = (time.time() - start_time) * 1000
@@ -506,6 +563,10 @@ class AddressMatcher:
     def search_batch(self, queries):
         results = []
         for query in queries:
+            # Проверяем наличие номера дома
+            if not self.has_house_number(query):
+                continue  # Пропускаем запросы без номера дома
+
             candidates = self.find_best_match(query)
             if candidates:
                 results.append({
