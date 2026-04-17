@@ -7,6 +7,8 @@ ML-based address matcher with fuzzy search and logistic regression.
 - python src/train.py - обучение модели
 - python src/matcher.py - интерактивный поиск
 
+- python src/compare_without_ml.py - сравнение нормализации и ML
+
 - python src/batch_test.py - пакетное тестирование
 - python src/batch_process.py - тест выбранных адресов
 - python src/debug_address.py - дебаг неработающих

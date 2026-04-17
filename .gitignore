@@ -56,3 +56,4 @@ src/test_*.py
 src/batch_test.py
 src/batch_process.py
 src/debug_address.py
+src/compare_without_ml.py
