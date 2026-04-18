@@ -19,6 +19,7 @@ ABBREVIATIONS = {
     'пл': 'площадь',
     'площадь': 'площадь',
     'б-р': 'бульвар',
+    'б-р.': 'бульвар',
     'бул': 'бульвар',
     'бульв': 'бульвар',
     'бульвар': 'бульвар',
@@ -46,7 +47,7 @@ ABBREVIATIONS = {
     'лит': 'литера',
     'литера': 'литера',
     'домовл': 'домовладение',
-    'домовл.': 'домовладение',
+    'домовл.': 'домовладение'
 }
 
 # Фонетическая карта
@@ -81,10 +82,48 @@ def normalize_address(address):
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
 
-    # ===== СПЕЦИАЛЬНАЯ ОБРАБОТКА "пр-д" ДО ВСЕХ ОСТАЛЬНЫХ ЗАМЕН =====
-    # Заменяем "пр-д" на "проезд" (это должно быть самым первым правилом)
+    # ===== СПЕЦИАЛЬНАЯ ОБРАБОТКА "пр-д" (ПРОЕЗД) =====
     address = re.sub(r'\bпр-д\b', r'проезд', address, flags=re.IGNORECASE)
     address = re.sub(r'\bпр-д\.', r'проезд', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА "Коптевский М. пр." -> "Малый Коптевский проезд" =====
+    address = re.sub(r'([а-я]+)\s+(м|м\.)\s+пр\.?\b', r'малый \1 проезд', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(б|б\.)\s+пр\.?\b', r'большой \1 проезд', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА "пр" В КОНТЕКСТЕ ПРОЕЗДА =====
+    # "1-й пр." -> "1-й проезд"
+    address = re.sub(r'(\d+)-[яй]\s+пр\.?\b', r'\1-й проезд', address, flags=re.IGNORECASE)
+
+    # ===== ОСТАЛЬНЫЕ "пр" И "пр." КАК ПРОСПЕКТ =====
+    address = re.sub(r'\bпр\.?\b', r'проспект', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА "б-р" И "б-р." =====
+    address = re.sub(r'\bб-р\.?\b', r'бульвар', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА ПОРЯДКОВЫХ ЧИСЛИТЕЛЬНЫХ С НУЛЕМ =====
+    address = re.sub(r'\b0?(\d+)-й\b', r'\1-й', address, flags=re.IGNORECASE)
+    address = re.sub(r'\b0?(\d+)-я\b', r'\1-я', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА "М." ДЛЯ МУЖСКОГО РОДА =====
+    address = re.sub(r'\b(м|м\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'малый \2 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'\b(б|б\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'большой \2 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'\b(ср|ср\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'средний \2 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'\b(верхн|верхн\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'верхний \2 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'\b(нижн|нижн\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'нижний \2 \3', address, flags=re.IGNORECASE)
+
+        # ===== ОБРАБОТКА "Название М. переулок" -> "Малый Название переулок" =====
+    address = re.sub(r'([а-я]+)\s+(м|м\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'малый \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(б|б\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'большой \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(ср|ср\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'средний \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(верхн|верхн\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'верхний \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(нижн|нижн\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'нижний \1 \3', address, flags=re.IGNORECASE)
+
+    # ===== ОБРАБОТКА СОКРАЩЕНИЙ РАЗМЕРОВ В НАЧАЛЕ НАЗВАНИЯ =====
+    address = re.sub(r'([а-я]+)\s+(б|б\.)\s+(ул|улица)', r'большая \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(м|м\.)\s+(ул|улица)', r'малая \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(ср|ср\.)\s+(ул|улица)', r'средняя \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(верхн|верхн\.)\s+(ул|улица)', r'верхняя \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(нижн|нижн\.)\s+(ул|улица)', r'нижняя \1 \3', address, flags=re.IGNORECASE)
 
     # ===== ПЕРЕСТАНОВКА: "парковая 15-я" -> "15-я парковая" =====
     address = re.sub(r'([а-я]+)\s+(\d+)-я\s+(ул|улица|проспект|бульвар|переулок|шоссе|набережная|проезд|тупик)',
@@ -164,35 +203,24 @@ def normalize_address(address):
     address = re.sub(r'(\d+)\s+строение(\d+)', r'\1 строение \2', address, flags=re.IGNORECASE)
     address = re.sub(r'строение(\d+)', r'строение \1', address, flags=re.IGNORECASE)
 
-    # СЛИТНЫЕ "к" И "с" (КЛЮЧЕВОЕ!)
-    # "17к2" -> "17 корпус 2"
+    # СЛИТНЫЕ "к" И "с"
     address = re.sub(r'(\d+)к(\d+)', r'\1 корпус \2', address, flags=re.IGNORECASE)
-    # "17с2" -> "17 строение 2"
     address = re.sub(r'(\d+)с(\d+)', r'\1 строение \2', address, flags=re.IGNORECASE)
-    # "17к2с2" -> "17 корпус 2 строение 2"
     address = re.sub(r'(\d+)к(\d+)с(\d+)', r'\1 корпус \2 строение \3', address, flags=re.IGNORECASE)
-    # "д17к2" -> "дом 17 корпус 2"
     address = re.sub(r'д(\d+)к(\d+)', r'дом \1 корпус \2', address, flags=re.IGNORECASE)
-    # "д17к2с2" -> "дом 17 корпус 2 строение 2"
     address = re.sub(r'д(\d+)к(\d+)с(\d+)', r'дом \1 корпус \2 строение \3', address, flags=re.IGNORECASE)
-    # "д17с2" -> "дом 17 строение 2"
     address = re.sub(r'д(\d+)с(\d+)', r'дом \1 строение \2', address, flags=re.IGNORECASE)
 
-    # Комбинации без "д"
     address = re.sub(r'(\d+)к(\d+)с(\d+)', r'дом \1 корпус \2 строение \3', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)к(\d+)', r'дом \1 корпус \2', address, flags=re.IGNORECASE)
     address = re.sub(r'(\d+)с(\d+)', r'дом \1 строение \2', address, flags=re.IGNORECASE)
 
-    # ===== НОВАЯ ОБРАБОТКА "стр", "стр.", "строение" (ВСЕ ВАРИАНТЫ) =====
-    # Сначала отдельно стоящие "стр" и "стр."
+    # ===== ОБРАБОТКА "стр", "стр.", "строение" =====
     address = re.sub(r'\bстр\.?\s*(\d+)', r'строение \1', address, flags=re.IGNORECASE)
     address = re.sub(r'\bстр\.?(\d+)', r'строение \1', address, flags=re.IGNORECASE)
 
-    # Комбинации с домом: "д. 11 стр. 4", "д 11 стр 4", "дом 11 стр 4"
     address = re.sub(r'(д|дом)\.?\s*(\d+)\s+стр\.?\s*(\d+)', r'\1 \2 строение \3', address, flags=re.IGNORECASE)
-    # "улица 11 стр 4", "ул. 11 стр. 4"
     address = re.sub(r'(\b(?:улица|ул)\.?\s+)(\d+)\s+стр\.?\s*(\d+)', r'\1дом \2 строение \3', address, flags=re.IGNORECASE)
-    # "Таллинская ул. 11 стр. 4" - улица уже есть, добавляем "дом"
     address = re.sub(r'([а-я]+)\s+(ул|улица)\.?\s+(\d+)\s+стр\.?\s*(\d+)', r'\1 \2 дом \3 строение \4', address, flags=re.IGNORECASE)
 
     # ===== ОБРАБОТКА "с" КАК СТРОЕНИЕ =====
@@ -330,11 +358,16 @@ def normalize_address(address):
     address = re.sub(r'^(\d+)\s+к(\d+)', r'дом \1 корпус \2', address)
     address = re.sub(r'^(\d+)\s+к\s+(\d+)', r'дом \1 корпус \2', address)
 
-    # ===== УДАЛЯЕМ ДУБЛИРУЮЩИЕСЯ "дом" И "корпус" =====
+    # ===== УДАЛЯЕМ ДУБЛИРУЮЩИЕСЯ СЛОВА =====
     address = re.sub(r'дом\s+дом', r'дом', address)
     address = re.sub(r'корпус\s+дом', r'корпус', address)
     address = re.sub(r'строение\s+дом', r'строение', address)
     address = re.sub(r'дом\s+корпус\s+дом', r'дом корпус', address)
+
+    # ===== УДАЛЯЕМ ЛИШНИЙ "дом" ПОСЛЕ "корпус" (ДО ДОБАВЛЕНИЯ НОВОГО) =====
+    address = re.sub(r'корпус\s+дом\s+(\d+)', r'корпус \1', address, flags=re.IGNORECASE)
+    address = re.sub(r'корпус\s+дом', r'корпус', address, flags=re.IGNORECASE)
+    address = re.sub(r'корпус\s+дом\b', r'корпус', address, flags=re.IGNORECASE)
 
     # ===== ДОБАВЛЯЕМ "дом" ПЕРЕД ЧИСЛАМИ, ЕСЛИ ЕГО НЕТ =====
     words = address.split()
@@ -345,8 +378,8 @@ def normalize_address(address):
         if re.match(r'^\d+[а-я]?$', word):
             is_ordinal = re.match(r'^\d+[яй]$', word)
             if not is_ordinal:
-                # Проверяем, что перед числом нет "дом"
-                if i == 0 or (words[i-1] not in ['дом', 'д', 'строение', 'корпус', 'к']):
+                prev_word = words[i-1] if i > 0 else ''
+                if prev_word not in ['дом', 'д', 'строение', 'корпус', 'к', 'корп.', 'кор.', 'корпус']:
                     new_words.append('дом')
         new_words.append(word)
         i += 1
@@ -382,6 +415,19 @@ def normalize_address(address):
 
     result = ' '.join(normalized_words)
     result = re.sub(r'\s+', ' ', result)
+
+    # ===== ФИНАЛЬНАЯ ОЧИСТКА =====
+
+    result = re.sub(r'дом\s+дом', r'дом', result)
+
+    # Удаляем лишний "дом" после "корпус"
+    result = re.sub(r'корпус\s+дом\s+(\d+)', r'корпус \1', result)
+    result = re.sub(r'корпус\s+дом(\d+)', r'корпус \1', result)
+    result = re.sub(r'корпус\s+дом\b', r'корпус', result)
+
+    # Удаляем лишний "дом" после "строение"
+    result = re.sub(r'строение\s+дом\s+(\d+)', r'строение \1', result)
+    result = re.sub(r'строение\s+дом', r'строение', result)
 
     # Приводим к единому порядку: название в начале, тип в конце
     words = result.split()
