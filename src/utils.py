@@ -75,12 +75,17 @@ def phonetic_normalize(text):
     return ''.join(result)[:10]
 
 
-def normalize_address(address):
+def normalize_address(address, apply_reverse=False):
     if pd.isna(address):
         return ""
 
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
+
+    # Применяем реверс ТОЛЬКО для поисковых запросов
+    if apply_reverse:
+        from src.street_variants import reverse_street_words  # импорт ВНУТРИ функции
+        address = reverse_street_words(address)
 
     # ===== СПЕЦИАЛЬНАЯ ОБРАБОТКА "пр-д" (ПРОЕЗД) =====
     address = re.sub(r'\bпр-д\b', r'проезд', address, flags=re.IGNORECASE)

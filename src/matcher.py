@@ -24,7 +24,7 @@ class AddressMatcher:
         self.normalized_addresses = []
         for addr in self.addresses:
             try:
-                norm_addr = normalize_address(addr)
+                norm_addr = normalize_address(addr, apply_reverse=False)
                 self.normalized_addresses.append(norm_addr)
             except Exception as e:
                 print(f"Ошибка нормализации адреса: {addr}, ошибка: {e}")
@@ -369,7 +369,7 @@ class AddressMatcher:
         return min(1.0, score)
 
     def find_best_match(self, query, top_n=20):
-        query_normalized = normalize_address(query)
+        query_normalized = normalize_address(query, apply_reverse=True)
 
         street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
         has_explicit_type = bool(re.search(street_type_pattern, query.lower().strip()))
