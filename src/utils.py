@@ -84,7 +84,7 @@ def normalize_address(address, apply_reverse=False):
 
     # Применяем реверс ТОЛЬКО для поисковых запросов
     if apply_reverse:
-        from src.street_variants import reverse_street_words  # импорт ВНУТРИ функции
+        from src.street_variants import reverse_street_words
         address = reverse_street_words(address)
 
     # ===== СПЕЦИАЛЬНАЯ ОБРАБОТКА "пр-д" (ПРОЕЗД) =====
@@ -116,7 +116,7 @@ def normalize_address(address, apply_reverse=False):
     address = re.sub(r'\b(верхн|верхн\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'верхний \2 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'\b(нижн|нижн\.)\s+([а-я]+)\s+(проезд|переулок|проспект|бульвар)', r'нижний \2 \3', address, flags=re.IGNORECASE)
 
-        # ===== ОБРАБОТКА "Название М. переулок" -> "Малый Название переулок" =====
+    # ===== ОБРАБОТКА "Название М. переулок" -> "Малый Название переулок" =====
     address = re.sub(r'([а-я]+)\s+(м|м\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'малый \1 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-я]+)\s+(б|б\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'большой \1 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'([а-я]+)\s+(ср|ср\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'средний \1 \3', address, flags=re.IGNORECASE)
@@ -124,11 +124,17 @@ def normalize_address(address, apply_reverse=False):
     address = re.sub(r'([а-я]+)\s+(нижн|нижн\.)\s+(переулок|пер|проезд|проспект|бульвар|тупик|шоссе)', r'нижний \1 \3', address, flags=re.IGNORECASE)
 
     # ===== ОБРАБОТКА СОКРАЩЕНИЙ РАЗМЕРОВ В НАЧАЛЕ НАЗВАНИЯ =====
-    address = re.sub(r'([а-я]+)\s+(б|б\.)\s+(ул|улица)', r'большая \1 \3', address, flags=re.IGNORECASE)
-    address = re.sub(r'([а-я]+)\s+(м|м\.)\s+(ул|улица)', r'малая \1 \3', address, flags=re.IGNORECASE)
-    address = re.sub(r'([а-я]+)\s+(ср|ср\.)\s+(ул|улица)', r'средняя \1 \3', address, flags=re.IGNORECASE)
-    address = re.sub(r'([а-я]+)\s+(верхн|верхн\.)\s+(ул|улица)', r'верхняя \1 \3', address, flags=re.IGNORECASE)
-    address = re.sub(r'([а-я]+)\s+(нижн|нижн\.)\s+(ул|улица)', r'нижняя \1 \3', address, flags=re.IGNORECASE)
+    # Женский род (порядок: Название Б. тип)
+    address = re.sub(r'([а-я]+)\s+(б|б\.)\s+(улица|ул|площадь|пл|набережная|наб|аллея)',
+                     r'большая \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(м|м\.)\s+(улица|ул|площадь|пл|набережная|наб|аллея)',
+                     r'малая \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(ср|ср\.)\s+(улица|ул|площадь|пл|набережная|наб|аллея)',
+                     r'средняя \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(верхн|верхн\.)\s+(улица|ул|площадь|пл|набережная|наб|аллея)',
+                     r'верхняя \1 \3', address, flags=re.IGNORECASE)
+    address = re.sub(r'([а-я]+)\s+(нижн|нижн\.)\s+(улица|ул|площадь|пл|набережная|наб|аллея)',
+                     r'нижняя \1 \3', address, flags=re.IGNORECASE)
 
     # ===== ПЕРЕСТАНОВКА: "парковая 15-я" -> "15-я парковая" =====
     address = re.sub(r'([а-я]+)\s+(\d+)-я\s+(ул|улица|проспект|бульвар|переулок|шоссе|набережная|проезд|тупик)',
@@ -169,7 +175,7 @@ def normalize_address(address, apply_reverse=False):
                      r'\1 дом \2 корпус \3', address, flags=re.IGNORECASE)
 
     # ===== КОНТЕКСТНАЯ ЗАМЕНА СОКРАЩЕНИЙ ДЛЯ РАЗМЕРОВ =====
-    # Женский род
+    # Женский род (порядок: Б. Название тип)
     address = re.sub(r'\b(б|б\.|больш|больш\.)\s+([а-я]+)\s+(улица|ул|площадь|пл|набережная|наб)',
                      r'большая \2 \3', address, flags=re.IGNORECASE)
     address = re.sub(r'\b(м|м\.|мал|мал\.)\s+([а-я]+)\s+(улица|ул|площадь|пл|набережная|наб)',
