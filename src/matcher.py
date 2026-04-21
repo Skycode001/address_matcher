@@ -10,11 +10,18 @@ from rapidfuzz import fuzz, process
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.utils import extract_house_number, extract_street_name, generate_features, normalize_address
+from src.zamkad import (
+    find_tinao_candidates_by_references,
+    get_tinao_score_details,
+    is_tinao_address,
+    rank_candidates_by_tinao,
+)
 
 
 class AddressMatcher:
     def __init__(self, addresses_df, use_index=True):
         self.df = addresses_df
+        self.df['УНОМ'] = pd.to_numeric(self.df['УНОМ'], errors='coerce').fillna(0).astype(int)
         self.addresses = addresses_df['Адрес'].tolist()
         self.unoms = addresses_df['УНОМ'].tolist()
         self.ids = addresses_df['ID'].tolist()
@@ -369,6 +376,7 @@ class AddressMatcher:
         return min(1.0, score)
 
     def find_best_match(self, query, top_n=20):
+        # Нормализуем запрос
         query_normalized = normalize_address(query, apply_reverse=True)
 
         street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
@@ -386,9 +394,58 @@ class AddressMatcher:
         else:
             candidates = self.fuzzy_search(query, query_normalized, top_n)
 
+        # ===== ПОИСК ПО ТИНАО (ВСЕГДА, ЕСЛИ ЗАПРОС ИЗ ТИНАО) =====
+        if is_tinao_address(query):
+            print("[DEBUG] Запрос из ТиНАО, запускаем поиск по справочникам...")
+            tinao_candidates_list = find_tinao_candidates_by_references(query, self.df, top_n=50)
+            print(f"[DEBUG] Найдено кандидатов по ТиНАО: {len(tinao_candidates_list)}")
+
+            if tinao_candidates_list:
+                # Преобразуем в формат candidates
+                tinao_formatted = []
+                for tc in tinao_candidates_list[:top_n]:
+                    tinao_formatted.append({
+                        'index': tc['index'],
+                        'address': tc['address'],
+                        'unom': tc['unom'],
+                        'id': self.ids[tc['index']],
+                        'fuzzy_score': 85,
+                        'exact_match': False,
+                        'tinao_score': tc['tinao_score'],
+                        'tinao_matches': tc.get('tinao_matches', [])
+                    })
+
+                # Если обычные кандидаты есть, объединяем
+                if candidates:
+                    candidates.extend(tinao_formatted)
+                    # Убираем дубликаты по индексу
+                    seen_indices = set()
+                    unique_candidates = []
+                    for c in candidates:
+                        if c['index'] not in seen_indices:
+                            seen_indices.add(c['index'])
+                            unique_candidates.append(c)
+                    candidates = unique_candidates
+                else:
+                    candidates = tinao_formatted
+
+                # Сортируем по tinao_score
+                candidates.sort(key=lambda x: x.get('tinao_score', 0), reverse=True)
+                print(f"[DEBUG] После объединения: {len(candidates)} кандидатов")
+
+                # Если есть кандидаты с высоким tinao_score, возвращаем их сразу
+                # Если есть кандидаты с высоким tinao_score, возвращаем их сразу
+                if candidates and candidates[0].get('tinao_score', 0) >= 1:  # было 3, стало 1
+                    print("[DEBUG] Возвращаем ТиНАО кандидатов без дополнительной фильтрации")
+                    for c in candidates:
+                        c['final_score'] = min(0.95, 0.5 + (c.get('tinao_score', 0) / 10))
+                        c['ml_score'] = c['final_score']
+                    return candidates[:top_n]
+
         if not candidates:
             return []
 
+        # Фильтрация кандидатов
         filtered_candidates = []
         query_house = extract_house_number(query)
         query_main = self.extract_house_main_number(query_house) if query_house else None
@@ -480,6 +537,10 @@ class AddressMatcher:
                 candidate['ml_score'] = candidate['fuzzy_score'] / 100
             candidates.sort(key=lambda x: x['final_score'], reverse=True)
 
+        # Ранжируем кандидатов по ТиНАО (если запрос относится к ТиНАО)
+        if is_tinao_address(query):
+            candidates = rank_candidates_by_tinao(candidates, query)
+
         return candidates
 
     def debug_fuzzy_search(self, query):
@@ -519,11 +580,18 @@ class AddressMatcher:
         start_time = time.time()
 
         # Проверяем, есть ли в запросе номер дома
-        # "1-я Парковая улица" - есть цифра, но это часть названия, поэтому разрешаем поиск
-        # "таллинская" - нет цифр, отклоняем
         if not self.has_house_number(query):
             print("Ничего не найдено (в запросе отсутствует номер дома)")
             return None
+
+        # Определяем принадлежность к ТиНАО
+        tinao_info = get_tinao_score_details(query)
+        if tinao_info['is_tinao']:
+            print("🗺️ Определен адрес в ТиНАО")
+            print(f"   Уверенность: {tinao_info['confidence']} ({tinao_info['score']} совпадений)")
+            if tinao_info['matches']:
+                matches_str = ', '.join(tinao_info['matches'][:5])
+                print(f"   Совпадения: {matches_str}")
 
         candidates = self.find_best_match(query)
 
@@ -546,6 +614,8 @@ class AddressMatcher:
                 match_type = "✓ Точное" if cand.get('exact_match', False) else "≈ Нечеткое"
                 print(f"  {i}. [{match_type}] УНОМ: {cand['unom']} | {cand['address']}")
                 print(f"     Уверенность: {cand['final_score']:.2%} (ML: {cand.get('ml_score', 0):.2%})")
+                if cand.get('tinao_score', 0) > 0:
+                    print(f"     ТиНАО: +{cand['tinao_score']} баллов")
 
             choice = input("\nВыберите номер или нажмите Enter для первого: ")
             if choice.isdigit() and 1 <= int(choice) <= len(candidates):
@@ -557,6 +627,8 @@ class AddressMatcher:
         if best.get('exact_match', False):
             print("   Тип: Точное совпадение по индексу")
         print(f"   Уверенность: {best['final_score']:.2%}")
+        if best.get('tinao_score', 0) > 0:
+            print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
 
         return best
 
@@ -565,7 +637,7 @@ class AddressMatcher:
         for query in queries:
             # Проверяем наличие номера дома
             if not self.has_house_number(query):
-                continue  # Пропускаем запросы без номера дома
+                continue
 
             candidates = self.find_best_match(query)
             if candidates:
