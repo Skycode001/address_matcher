@@ -13,7 +13,7 @@ from src.utils import extract_house_number, extract_street_name, generate_featur
 from src.zamkad import (
     find_tinao_candidates_by_references,
     get_tinao_score_details,
-    is_tinao_address,
+    is_tinao_query,
     rank_candidates_by_tinao,
 )
 
@@ -379,6 +379,43 @@ class AddressMatcher:
         # Нормализуем запрос
         query_normalized = normalize_address(query, apply_reverse=True)
 
+        # ===== ЕСЛИ ЗАПРОС ИЗ ТИНАО - ИЩЕМ ТОЛЬКО В ТИНАО И СРАЗУ ВОЗВРАЩАЕМ =====
+        if is_tinao_query(query):
+            print("[DEBUG] Запрос из ТиНАО, ищем только в ТиНАО...")
+            tinao_candidates = find_tinao_candidates_by_references(
+                query,
+                self.df,
+                normalized_addresses=self.normalized_addresses,  # ← передаем готовые нормализованные адреса
+                top_n=top_n
+            )
+            if tinao_candidates:
+                print(f"[DEBUG] Найдено {len(tinao_candidates)} кандидатов в ТиНАО")
+                result = []
+                for tc in tinao_candidates:
+                    result.append({
+                        'index': tc['index'],
+                        'address': tc['address'],
+                        'unom': tc['unom'],
+                        'id': self.ids[tc['index']],
+                        'fuzzy_score': 85,
+                        'exact_match': False,
+                        'tinao_score': tc.get('tinao_score', 0),
+                        'final_score': min(0.95, 0.7 + (tc.get('tinao_score', 0) / 10)),
+                        'ml_score': min(0.95, 0.7 + (tc.get('tinao_score', 0) / 10)),
+                    })
+                # Выводим результат сразу
+                best = result[0]
+                print("\n✅ Найден адрес (ТиНАО):")
+                print(f"   УНОМ: {best['unom']}")
+                print(f"   Адрес: {best['address']}")
+                print(f"   Уверенность: {best['final_score']:.2%}")
+                if best.get('tinao_score', 0) > 0:
+                    print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
+                return result
+            else:
+                print("[DEBUG] Кандидатов в ТиНАО не найдено, продолжаем обычный поиск")
+
+        # ===== ОБЫЧНЫЙ ПОИСК (ЕСЛИ НЕ ТИНАО ИЛИ НИЧЕГО НЕ НАШЛИ) =====
         street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
         has_explicit_type = bool(re.search(street_type_pattern, query.lower().strip()))
 
@@ -393,54 +430,6 @@ class AddressMatcher:
             candidates = exact_matches
         else:
             candidates = self.fuzzy_search(query, query_normalized, top_n)
-
-        # ===== ПОИСК ПО ТИНАО (ВСЕГДА, ЕСЛИ ЗАПРОС ИЗ ТИНАО) =====
-        if is_tinao_address(query):
-            print("[DEBUG] Запрос из ТиНАО, запускаем поиск по справочникам...")
-            tinao_candidates_list = find_tinao_candidates_by_references(query, self.df, top_n=50)
-            print(f"[DEBUG] Найдено кандидатов по ТиНАО: {len(tinao_candidates_list)}")
-
-            if tinao_candidates_list:
-                # Преобразуем в формат candidates
-                tinao_formatted = []
-                for tc in tinao_candidates_list[:top_n]:
-                    tinao_formatted.append({
-                        'index': tc['index'],
-                        'address': tc['address'],
-                        'unom': tc['unom'],
-                        'id': self.ids[tc['index']],
-                        'fuzzy_score': 85,
-                        'exact_match': False,
-                        'tinao_score': tc['tinao_score'],
-                        'tinao_matches': tc.get('tinao_matches', [])
-                    })
-
-                # Если обычные кандидаты есть, объединяем
-                if candidates:
-                    candidates.extend(tinao_formatted)
-                    # Убираем дубликаты по индексу
-                    seen_indices = set()
-                    unique_candidates = []
-                    for c in candidates:
-                        if c['index'] not in seen_indices:
-                            seen_indices.add(c['index'])
-                            unique_candidates.append(c)
-                    candidates = unique_candidates
-                else:
-                    candidates = tinao_formatted
-
-                # Сортируем по tinao_score
-                candidates.sort(key=lambda x: x.get('tinao_score', 0), reverse=True)
-                print(f"[DEBUG] После объединения: {len(candidates)} кандидатов")
-
-                # Если есть кандидаты с высоким tinao_score, возвращаем их сразу
-                # Если есть кандидаты с высоким tinao_score, возвращаем их сразу
-                if candidates and candidates[0].get('tinao_score', 0) >= 1:  # было 3, стало 1
-                    print("[DEBUG] Возвращаем ТиНАО кандидатов без дополнительной фильтрации")
-                    for c in candidates:
-                        c['final_score'] = min(0.95, 0.5 + (c.get('tinao_score', 0) / 10))
-                        c['ml_score'] = c['final_score']
-                    return candidates[:top_n]
 
         if not candidates:
             return []
@@ -538,7 +527,7 @@ class AddressMatcher:
             candidates.sort(key=lambda x: x['final_score'], reverse=True)
 
         # Ранжируем кандидатов по ТиНАО (если запрос относится к ТиНАО)
-        if is_tinao_address(query):
+        if is_tinao_query(query):
             candidates = rank_candidates_by_tinao(candidates, query)
 
         return candidates
@@ -584,7 +573,7 @@ class AddressMatcher:
             print("Ничего не найдено (в запросе отсутствует номер дома)")
             return None
 
-        # Определяем принадлежность к ТиНАО
+        # Определяем принадлежность к ТиНАО (только для информации)
         tinao_info = get_tinao_score_details(query)
         if tinao_info['is_tinao']:
             print("🗺️ Определен адрес в ТиНАО")

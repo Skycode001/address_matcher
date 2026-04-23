@@ -1,20 +1,29 @@
 """
 Модуль для определения и ранжирования адресов в ТиНАО (Троицкий и Новомосковский административные округа)
-Логика: чем больше совпадений со справочниками, тем выше балл
+Логика: ключевые слова 'тинао' и 'троицк' включают фильтрацию по округам
 """
 
+import os
 import re
-from typing import Dict, List, Tuple
+import sys
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
+# Добавляем путь для импорта из utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.utils import normalize_address
+
 # Справочник "Город"
 CITY_REF = {
-    'Троицк': 'Троицк',
+    'город Троицк': 'Троицк',
+    'город Московский': 'Московский',
+    'город Щербинка': 'Щербинка',
 }
 
 # Справочник "Внутригородская_территория"
 INNER_CITY_REF = {
+    # Троицкий
     'внутригородская территория городской округ Троицк': 'Троицк',
     'внутригородская территория поселение Первомайское': 'Первомайское',
     'внутригородская территория поселение Краснопахорское': 'Краснопахорское',
@@ -28,10 +37,26 @@ INNER_CITY_REF = {
     'внутригородская территория муниципальный округ Бекасово': 'Бекасово',
     'внутригородская территория муниципальный округ Краснопахорский': 'Краснопахорский',
     'внутригородская территория муниципальный округ Вороново': 'Вороново',
+    # Новомосковский
+    'внутригородская территория поселение Филимонковское': 'Филимонковское',
+    'внутригородская территория поселение Сосенское': 'Сосенское',
+    'внутригородская территория поселение Рязановское': 'Рязановское',
+    'внутригородская территория поселение Московский': 'Московский',
+    'внутригородская территория поселение Марушкинское': 'Марушкинское',
+    'внутригородская территория поселение Кокошкино': 'Кокошкино',
+    'внутригородская территория поселение Десеновское': 'Десеновское',
+    'внутригородская территория поселение Воскресенское': 'Воскресенское',
+    'внутригородская территория поселение Внуковское': 'Внуковское',
+    'внутригородская территория муниципальный округ Щербинка': 'Щербинка',
+    'внутригородская территория муниципальный округ Филимонковский': 'Филимонковский',
+    'внутригородская территория муниципальный округ Коммунарка': 'Коммунарка',
+    'внутригородская территория муниципальный округ Внуково': 'Внуково',
+    'внутригородская территория городской округ Щербинка': 'Щербинка',
 }
 
 # Справочник "Муниципальное_образование"
 MUNICIPALITY_REF = {
+    # Троицкий
     'городской округ Троицк': 'Троицк',
     'поселение Первомайское': 'Первомайское',
     'поселение Щаповское': 'Щаповское',
@@ -45,10 +70,27 @@ MUNICIPALITY_REF = {
     'муниципальный округ Бекасово': 'Бекасово',
     'муниципальный округ Краснопахорский': 'Краснопахорский',
     'муниципальный округ Вороново': 'Вороново',
+    # Новомосковский
+    'поселение Филимонковское': 'Филимонковское',
+    'поселение Сосенское': 'Сосенское',
+    'поселение Десеновское': 'Десеновское',
+    'поселение Внуковское': 'Внуковское',
+    'поселение Рязановское': 'Рязановское',
+    'поселение Марушкинское': 'Марушкинское',
+    'поселение Воскресенское': 'Воскресенское',
+    'поселение Московский': 'Московский',
+    'поселение "Мосрентген"': 'Мосрентген',
+    'городской округ Щербинка': 'Щербинка',
+    'поселение Кокошкино': 'Кокошкино',
+    'муниципальный округ Щербинка': 'Щербинка',
+    'муниципальный округ Коммунарка': 'Коммунарка',
+    'муниципальный округ Внуково': 'Внуково',
+    'муниципальный округ Филимонковский': 'Филимонковский',
 }
 
 # Справочник "Населенный_пункт"
 SETTLEMENT_REF = {
+    # Троицкий
     'деревня Раево': 'Раево',
     'деревня Романцево': 'Романцево',
     'деревня Пучково': 'Пучково',
@@ -220,9 +262,132 @@ SETTLEMENT_REF = {
     'деревня Малеевка': 'Малеевка',
     'деревня Лукино': 'Лукино',
     'посёлок Армейский': 'Армейский',
+    # Новомосковский
+    'деревня Столбово': 'Столбово',
+    'посёлок Завода Мосрентген': 'Завод Мосрентген',
+    'деревня Акиньшино': 'Акиньшино',
+    'посёлок Совхоза "Крёкшино"': 'Совхоз "Крёкшино"',
+    'деревня Зименки': 'Зименки',
+    'посёлок Коммунарка': 'Коммунарка',
+    'посёлок Марьино': 'Марьино',
+    'деревня Бачурино': 'Бачурино',
+    'деревня Каракашево': 'Каракашево',
+    'деревня Городище': 'Городище',
+    'деревня Ямонтово': 'Ямонтово',
+    'деревня Саларьево': 'Саларьево',
+    'деревня Сальково': 'Сальково',
+    'деревня Летово': 'Летово',
+    'деревня Рязаново': 'Рязаново',
+    'деревня Говорово': 'Говорово',
+    'посёлок Воскресенское': 'Воскресенское',
+    'деревня Рассказовка': 'Рассказовка',
+    'деревня Армазово': 'Армазово',
+    'посёлок Филимонки': 'Филимонки',
+    'деревня Дудкино': 'Дудкино',
+    'деревня Николо-Хованское': 'Николо-Хованское',
+    'посёлок Переделкино': 'Переделкино',
+    'дачный посёлок Кокошкино': 'Кокошкино',
+    'деревня Алхимово': 'Алхимово',
+    'деревня Марьино': 'Марьино',
+    'посёлок фабрики имени 1-го Мая': 'Фабрика имени 1‑го Мая',
+    'деревня Ликова': 'Ликова',
+    'деревня Большое Покровское': 'Большое Покровское',
+    'деревня Бурцево': 'Бурцево',
+    'деревня Марушкино': 'Марушкино',
+    'деревня Постниково': 'Постниково',
+    'деревня Ерино': 'Ерино',
+    'деревня Расторопово': 'Расторопово',
+    'село Остафьево': 'Остафьево',
+    'деревня Студенцы': 'Студенцы',
+    'деревня Большое Свинорье': 'Большое Свинорье',
+    'деревня Лаптево': 'Лаптево',
+    'деревня Картмазово': 'Картмазово',
+    'деревня Лапшинка': 'Лапшинка',
+    'посёлок Газопровод': 'Газопровод',
+    'деревня Щербинка': 'Щербинка',
+    'деревня Кривошеино': 'Кривошеино',
+    'деревня Рожново': 'Рожново',
+    'посёлок ДСК "Мичуринец"': 'ДСК "Мичуринец"',
+    'посёлок Первомайское': 'Первомайское',
+    'деревня Изварино': 'Изварино',
+    'деревня Сосенки': 'Сосенки',
+    'деревня Язово': 'Язово',
+    'деревня Крёкшино': 'Крёкшино',
+    'деревня Милюково': 'Милюково',
+    'посёлок Института Полиомиелита': 'Институт Полиомиелита',
+    'деревня Пушкино': 'Пушкино',
+    'деревня Верхнее Валуево': 'Верхнее Валуево',
+    'деревня Ларево': 'Ларево',
+    'деревня Верховье': 'Верховье',
+    'деревня Кукшево': 'Кукшево',
+    'деревня Настасьино': 'Настасьино',
+    'деревня Бараново': 'Бараново',
+    'деревня Прокшино': 'Прокшино',
+    'деревня Елизарово': 'Елизарово',
+    'хутор Ильичёвка': 'Ильичёвка',
+    'деревня Рогозинино': 'Рогозинино',
+    'посёлок Внуково': 'Внуково',
+    'деревня Молодцы': 'Молодцы',
+    'деревня Пыхтино': 'Пыхтино',
+    'деревня Мостовское': 'Мостовское',
+    'деревня Девятское': 'Девятское',
+    'посёлок Знамя Октября': 'Знамя Октября',
+    'деревня Макарово': 'Макарово',
+    'деревня Никульское': 'Никульское',
+    'посёлок Толстопальцево': 'Толстопальцево',
+    'деревня Нижнее Валуево': 'Нижнее Валуево',
+    'посёлок Валуево': 'Валуево',
+    'посёлок Ерино': 'Ерино',
+    'деревня Губкино': 'Губкино',
+    'деревня Кончеево': 'Кончеево',
+    'деревня Милорадово': 'Милорадово',
+    'деревня Тарасово': 'Тарасово',
+    'деревня Кнутово': 'Кнутово',
+    'деревня Середнево': 'Середнево',
+    'посёлок Радиоцентр': 'Радиоцентр',
+    'деревня Пятовское': 'Пятовское',
+    'деревня Староселье': 'Староселье',
+    'деревня Харьино': 'Харьино',
+    'деревня Старосырово': 'Старосырово',
+    'деревня Соколово': 'Соколово',
+    'деревня Рыбино': 'Рыбино',
+    'посёлок Остафьево': 'Остафьево',
+    'деревня Губцево': 'Губцево',
+    'деревня Андреевское': 'Андреевское',
+    'деревня Голенищево': 'Голенищево',
+    'деревня Марфино': 'Марфино',
+    'деревня Хатминки': 'Хатминки',
+    'деревня Мамыры': 'Мамыры',
+    'деревня Князево': 'Князево',
+    'деревня Давыдково': 'Давыдково',
+    'деревня Толстопальцево': 'Толстопальцево',
+    'деревня Внуково': 'Внуково',
+    'посёлок Абабурово': 'Абабурово',
+    'деревня Власово': 'Власово',
+    'посёлок Станции Крёкшино': 'Станция Крёкшино',
+    'посёлок Красные Горки': 'Красные Горки',
+    'посёлок Кирпичного Завода': 'Кирпичный Завод',
+    'деревня Анкудиново': 'Анкудиново',
+    'хутор Брёхово': 'Брёхово',
+    'деревня Санино': 'Санино',
+    'посёлок 1-й Рабочий Посёлок': '1‑й Рабочий Посёлок',
+    'деревня Шельбутово': 'Шельбутово',
+    'посёлок Минвнешторга': 'Минвнешторг',
+    'посёлок Станции Внуково': 'Станция Внуково',
+    'хутор Гаврилово': 'Гаврилово',
+    'хутор Новобрёхово': 'Новобрёхово',
+    'посёлок Детского Дома "Молодая Гвардия"': 'Детский Дом "Молодая Гвардия"',
+    'посёлок Ульяновского Лесопарка': 'Ульяновский Лесопарк',
+    'территория Внуково Аэропорт': 'Внуково Аэропорт'
 }
 
-# Ключевые слова для определения ТиНАО (дают +5 баллов)
+# Округа ТиНАО для фильтрации
+TINAO_DISTRICTS = [
+    'Троицкий административный округ',
+    'Новомосковский административный округ',
+]
+
+# Ключевые слова для определения ТиНАО (только для фильтрации, НЕ добавляют баллов)
 TINAO_KEYWORDS = ['тинао', 'троицк', 'новомосковский', 'троицкий']
 
 # Объединяем все справочники для поиска
@@ -234,15 +399,54 @@ ALL_REFERENCES = {
 }
 
 
+def normalize_tinao_text(text: str) -> str:
+    """
+    Нормализует текст для поиска в ТиНАО с использованием основной нормализации.
+    """
+    if not text:
+        return ""
+    result = normalize_address(text, apply_reverse=False)
+
+    # Удаляем стоп-слова, которые не влияют на идентификацию адреса
+    result = re.sub(r'\bрайон\b', '', result)
+    result = re.sub(r'\bр-н\b', '', result)
+    result = re.sub(r'\bрн\b', '', result)
+
+    # Очищаем лишние пробелы
+    result = re.sub(r'\s+', ' ', result).strip()
+
+    return result
+
+
+def is_tinao_query(query: str) -> bool:
+    """
+    Проверяет, является ли запрос запросом по ТиНАО.
+    Возвращает True, если в запросе есть ключевые слова 'тинао' или 'троицк'.
+    """
+    if not query:
+        return False
+    query_lower = query.lower()
+    return any(keyword in query_lower for keyword in ['тинао', 'троицк'])
+
+
+def filter_by_tinao_district(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Фильтрует DataFrame по округам ТиНАО.
+    """
+    if df is None or df.empty:
+        return df
+
+    if 'Округ' not in df.columns:
+        print("[WARNING] В базе отсутствует столбец 'Округ'. Фильтрация по ТиНАО невозможна.")
+        return df
+
+    mask = df['Округ'].isin(TINAO_DISTRICTS)
+    return df[mask].copy()
+
+
 def calculate_tinao_score(address: str) -> Tuple[int, List[str]]:
     """
     Рассчитывает количество совпадений адреса со справочниками ТиНАО.
-    
-    Args:
-        address: Адрес для проверки
-        
-    Returns:
-        Tuple[int, List[str]]: (количество совпадений, список найденных соответствий)
     """
     if not address:
         return 0, []
@@ -251,13 +455,6 @@ def calculate_tinao_score(address: str) -> Tuple[int, List[str]]:
     matches = []
     score = 0
 
-    # Проверка по ключевым словам (большой вес +5)
-    for keyword in TINAO_KEYWORDS:
-        if keyword in address_lower:
-            score += 5
-            matches.append(f"ключевое слово '{keyword}'")
-
-    # Проверка по справочникам (каждое совпадение +1)
     for ref_name, ref_value in ALL_REFERENCES.items():
         if ref_name.lower() in address_lower:
             score += 1
@@ -266,42 +463,66 @@ def calculate_tinao_score(address: str) -> Tuple[int, List[str]]:
     return score, matches
 
 
-def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int = 100) -> List[Dict]:
+def find_tinao_candidates_by_references(
+    query: str,
+    df: pd.DataFrame,
+    normalized_addresses: Optional[List[str]] = None,
+    top_n: int = 100
+) -> List[Dict]:
     """
-    Ищет кандидатов в базе по совпадениям со справочниками ТиНАО.
+    Ищет кандидатов в отфильтрованной по округам базе по совпадениям со справочниками ТиНАО.
+    
+    Args:
+        query: Запрос пользователя
+        df: DataFrame с адресами
+        normalized_addresses: Предварительно нормализованные адреса (для ускорения)
+        top_n: Количество кандидатов
     """
-    if not query or df is None:
+    if not query or df is None or df.empty:
         return []
 
+    # Фильтруем базу по округам ТиНАО
+    filtered_df = filter_by_tinao_district(df)
+
+    if filtered_df.empty:
+        print("[DEBUG] Нет адресов в округах ТиНАО")
+        return []
+
+    print(f"[DEBUG] Фильтрация по ТиНАО: {len(df)} -> {len(filtered_df)} адресов")
+
     query_lower = query.lower()
-    candidates = []
+
+    # Нормализуем запрос целиком
+    query_normalized = normalize_tinao_text(query_lower)
 
     # Удаляем ключевые слова ТиНАО для сравнения
-    search_query = query_lower
+    search_query = query_normalized
     for keyword in TINAO_KEYWORDS:
         search_query = search_query.replace(keyword, '').strip()
     search_query = re.sub(r'[, ]+', ' ', search_query).strip()
     search_query = search_query.replace('"', '').replace("'", "")
 
     print(f"\n[DEBUG] Поиск по ТиНАО для запроса: {query}")
-    print(f"[DEBUG] Поисковая строка: {search_query}")
+    print(f"[DEBUG] Нормализованный запрос: {query_normalized}")
+    print(f"[DEBUG] Поисковая строка (без ключевых слов): {search_query}")
 
     # Разбиваем на ключевые слова
     keywords = []
     for w in search_query.split():
-        if len(w) >= 2 or w.isdigit():
+        if len(w) >= 2 or w.isdigit() or w.replace('-', '').isdigit():
             keywords.append(w)
     print(f"[DEBUG] Ключевые слова: {keywords}")
 
+    # Извлекаем порядковые числительные (6-я, 5-й и т.д.)
+    ordinal_pattern = re.compile(r'\b(\d+)-[яйе]\b')
+    ordinals_in_query = ordinal_pattern.findall(search_query)
+    print(f"[DEBUG] Порядковые числительные в запросе: {ordinals_in_query}")
+
     # Функция для извлечения чисел, исключая порядковые числительные
     def extract_numbers_ignore_ordinal(text):
-        """Извлекает числа, игнорируя порядковые числительные (1-й, 2-я, 3-е)"""
-        # Сначала убираем порядковые числительные
         text_without_ordinal = re.sub(r'\b\d+[-][яйе]\b', '', text)
-        # Извлекаем оставшиеся числа
         return set(re.findall(r'\b(\d+)\b', text_without_ordinal))
 
-    # Извлекаем все числа из запроса (игнорируя порядковые числительные)
     all_numbers_in_query = extract_numbers_ignore_ordinal(search_query)
     print(f"[DEBUG] Все числа в запросе (без порядковых): {all_numbers_in_query}")
 
@@ -322,48 +543,63 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
             })
             print(f"[DEBUG] Найден контекст: {match[0]}={match[1]}")
 
-    # Извлекаем простые числа (как отдельные слова, не в составе порядковых)
-    simple_numbers = []
-    for w in search_query.split():
-        if re.match(r'^\d+$', w):
-            simple_numbers.append(w)
+    # Извлекаем простые числа
+    simple_numbers = [w for w in search_query.split() if re.match(r'^\d+$', w)]
     print(f"[DEBUG] Простые числа: {simple_numbers}")
 
-    # Извлекаем числа с буквами (например, 5А, 1Б/Н)
-    numbers_with_letters = []
-    for w in search_query.split():
-        if re.match(r'^\d+[А-Яа-я/]+$', w):
-            numbers_with_letters.append(w)
+    # Извлекаем числа с буквами
+    numbers_with_letters = [w for w in search_query.split() if re.match(r'^\d+[А-Яа-я/]+$', w)]
     print(f"[DEBUG] Числа с буквами: {numbers_with_letters}")
 
-    addresses = df['Адрес'].tolist()
-    unoms = df['УНОМ'].tolist()
+    addresses = filtered_df['Адрес'].tolist()
+    unoms = filtered_df['УНОМ'].tolist()
 
-    for idx, address in enumerate(addresses):
-        if not isinstance(address, str):
-            continue
-        if pd.isna(address):
-            continue
-        if not address.strip():
+    # Используем предварительно нормализованные адреса или нормализуем сейчас
+    if normalized_addresses is not None and len(normalized_addresses) == len(df):
+        # Фильтруем нормализованные адреса по тем же индексам
+        filtered_indices = filtered_df.index.tolist()
+        filtered_normalized = [normalized_addresses[i] for i in filtered_indices]
+        print("[DEBUG] Используем предварительно нормализованные адреса (быстро)")
+    else:
+        # Если не переданы - нормализуем сейчас (медленно, только для первого раза)
+        print("[DEBUG] Предварительно нормализованные адреса не найдены, нормализуем сейчас...")
+        filtered_normalized = [normalize_tinao_text(addr) for addr in addresses]
+
+    candidates = []
+
+    for idx, (address, address_normalized) in enumerate(zip(addresses, filtered_normalized)):
+        if not isinstance(address, str) or pd.isna(address) or not address.strip():
             continue
 
         address_lower = address.lower()
 
-        # Проверяем ключевые слова
+        # Проверяем ключевые слова (в нормализованном виде)
         all_keywords_found = True
         for kw in keywords:
-            if kw not in address_lower:
+            if kw in ordinals_in_query:
+                continue
+            if kw not in address_normalized:
                 all_keywords_found = False
                 break
 
         if not all_keywords_found:
             continue
 
+        # Проверяем порядковые числительные
+        ordinals_match = True
+        for ordinal in ordinals_in_query:
+            if f"{ordinal}-" not in address_normalized and f"{ordinal} " not in address_normalized:
+                ordinals_match = False
+                break
+
+        if not ordinals_match:
+            continue
+
         # Проверяем контекстные числа
         context_match = True
         for ctx in numbers_with_context:
             pattern = rf'{ctx["type"]}\s+{re.escape(ctx["number"])}'
-            if not re.search(pattern, address_lower):
+            if not re.search(pattern, address_normalized):
                 context_match = False
                 break
 
@@ -373,16 +609,7 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
         # Проверяем простые числа
         numbers_match = True
         for num in simple_numbers:
-            found = False
-            address_words = re.split(r'[, ]+', address_lower)
-            for aw in address_words:
-                if aw == num:
-                    found = True
-                    break
-                if aw.startswith(num) and (len(aw) == len(num) or not aw[len(num)].isdigit()):
-                    found = True
-                    break
-            if not found:
+            if num not in address_normalized:
                 numbers_match = False
                 break
 
@@ -392,25 +619,26 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
         # Проверяем числа с буквами
         letters_match = True
         for num_let in numbers_with_letters:
-            if num_let not in address_lower:
+            if num_let not in address_normalized:
                 letters_match = False
                 break
 
         if not letters_match:
             continue
 
-        # Проверка на лишние числа (игнорируя порядковые числительные в адресе)
-        all_numbers_in_address = extract_numbers_ignore_ordinal(address_lower)
+        # Проверка на лишние числа
+        all_numbers_in_address = extract_numbers_ignore_ordinal(address_normalized)
         extra_numbers = all_numbers_in_address - all_numbers_in_query
         if extra_numbers:
-            print(f"[DEBUG] Лишние числа в адресе (игнорируя порядковые): {extra_numbers}")
+            print(f"[DEBUG] Лишние числа в адресе: {extra_numbers}")
             continue
 
         candidates.append({
-            'index': idx,
+            'index': filtered_df.index[idx],
             'address': address,
             'unom': unoms[idx],
-            'address_lower': address_lower
+            'address_lower': address_lower,
+            'address_normalized': address_normalized
         })
 
     if not candidates:
@@ -420,7 +648,7 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
     # Считаем баллы
     scored_candidates = []
     for c in candidates:
-        score = len(keywords) + len(simple_numbers) + len(numbers_with_context) + len(numbers_with_letters)
+        score = len(keywords) + len(ordinals_in_query) + len(simple_numbers) + len(numbers_with_context) + len(numbers_with_letters)
 
         # Бонус за населенный пункт
         for settlement in SETTLEMENT_REF.keys():
@@ -433,11 +661,6 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
             if mun.lower() in query_lower and mun.lower() in c['address_lower']:
                 score += 15
                 break
-
-        # Бонус за ТиНАО
-        if any(kw in query_lower for kw in TINAO_KEYWORDS):
-            if 'троицк' in c['address_lower'] or 'городской округ троицк' in c['address_lower']:
-                score += 10
 
         scored_candidates.append({
             'index': c['index'],
@@ -458,13 +681,6 @@ def find_tinao_candidates_by_references(query: str, df: pd.DataFrame, top_n: int
 def rank_candidates_by_tinao(candidates: List[Dict], query: str) -> List[Dict]:
     """
     Ранжирует кандидатов по количеству совпадений со справочниками ТиНАО.
-    
-    Args:
-        candidates: Список кандидатов (адресов из базы)
-        query: Исходный запрос пользователя
-        
-    Returns:
-        List[Dict]: Отсортированный список кандидатов
     """
     if not candidates:
         return candidates
@@ -475,15 +691,6 @@ def rank_candidates_by_tinao(candidates: List[Dict], query: str) -> List[Dict]:
         address_lower = candidate['address'].lower()
         tinao_score = candidate.get('tinao_score', 0)
 
-        # Проверяем ключевые слова ТиНАО
-        for keyword in TINAO_KEYWORDS:
-            if keyword in query_lower or keyword in address_lower:
-                tinao_score += 5
-                if 'tinao_matches' not in candidate:
-                    candidate['tinao_matches'] = []
-                candidate['tinao_matches'].append(keyword)
-
-        # Проверяем совпадения со справочниками
         for ref_name, ref_value in ALL_REFERENCES.items():
             ref_lower = ref_name.lower()
             if ref_lower in query_lower or ref_lower in address_lower:
@@ -495,22 +702,13 @@ def rank_candidates_by_tinao(candidates: List[Dict], query: str) -> List[Dict]:
 
         candidate['tinao_score'] = tinao_score
 
-    # Сортируем по tinao_score (по убыванию)
     candidates.sort(key=lambda x: x.get('tinao_score', 0), reverse=True)
-
     return candidates
 
 
 def is_tinao_address(address: str, threshold: int = 2) -> bool:
     """
-    Определяет, относится ли адрес к ТиНАО.
-    
-    Args:
-        address: Адрес для проверки
-        threshold: Минимальное количество совпадений для уверенного определения
-        
-    Returns:
-        bool: True если адрес относится к ТиНАО
+    Определяет, относится ли адрес к ТиНАО по совпадениям со справочниками.
     """
     score, _ = calculate_tinao_score(address)
     return score >= threshold
@@ -519,16 +717,6 @@ def is_tinao_address(address: str, threshold: int = 2) -> bool:
 def get_tinao_score_details(address: str) -> Dict:
     """
     Возвращает детальную информацию о принадлежности адреса к ТиНАО.
-    
-    Args:
-        address: Адрес для проверки
-        
-    Returns:
-        Dict: Словарь с полями:
-            - is_tinao: bool
-            - score: int
-            - matches: List[str]
-            - confidence: str
     """
     score, matches = calculate_tinao_score(address)
 
@@ -550,22 +738,15 @@ def get_tinao_score_details(address: str) -> Dict:
 def normalize_tinao_query(query: str) -> str:
     """
     Нормализует запрос для поиска в ТиНАО.
-    Убирает ключевые слова ТиНАО, оставляя только адресную часть.
-    
-    Пример:
-    "троицк поселение Краснопахорское, деревня Раево, Ирландская улица, 1А"
-    -> "поселение Краснопахорское, деревня Раево, Ирландская улица, 1А"
     """
     if not query:
         return query
 
     result = query.lower()
 
-    # Убираем ключевые слова ТиНАО
     for keyword in TINAO_KEYWORDS:
         result = re.sub(r'\b' + re.escape(keyword) + r'\b', '', result)
 
-    # Убираем лишние запятые и пробелы
     result = re.sub(r',\s*', ', ', result)
     result = re.sub(r'\s+', ' ', result)
     result = result.strip(' ,')
