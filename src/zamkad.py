@@ -574,6 +574,7 @@ def find_tinao_candidates_by_references(
         address_lower = address.lower()
 
         # Проверяем ключевые слова (в нормализованном виде)
+        # Требуем совпадения ВСЕХ ключевых слов
         all_keywords_found = True
         for kw in keywords:
             if kw in ordinals_in_query:
@@ -633,6 +634,20 @@ def find_tinao_candidates_by_references(
             print(f"[DEBUG] Лишние числа в адресе: {extra_numbers}")
             continue
 
+        # ===== ПРОВЕРКА НА ЛИШНИЕ БУКВЫ В НОМЕРЕ ДОМА =====
+        # Если в запросе число без буквы, а в адресе число с буквой - пропускаем
+        reject_due_to_letter = False
+        if simple_numbers:
+            for num in simple_numbers:
+                # Ищем паттерн: число + буква (например, 13Б, 13А)
+                pattern_with_letter = rf'\b{num}[а-яА-Я]\b'
+                if re.search(pattern_with_letter, address_lower):
+                    print(f"[DEBUG] Отклоняем кандидата: в адресе есть буква после числа {num}")
+                    reject_due_to_letter = True
+                    break
+        if reject_due_to_letter:
+            continue
+
         candidates.append({
             'index': filtered_df.index[idx],
             'address': address,
@@ -644,6 +659,34 @@ def find_tinao_candidates_by_references(
     if not candidates:
         print("[DEBUG] Кандидатов не найдено")
         return []
+
+    # ===== ПРОВЕРКА НА НЕОДНОЗНАЧНОСТЬ =====
+    # Если в запросе нет уточняющего слова (деревня, посёлок, село, город и т.д.),
+    # и есть несколько кандидатов с разными населенными пунктами - ничего не находим
+
+    location_keywords = ['деревня', 'посёлок', 'поселок', 'село', 'город', 'городской', 'хутор']
+
+    has_location_keyword = any(kw in query_lower for kw in location_keywords)
+
+    if not has_location_keyword:
+        # Проверяем, есть ли несколько разных населенных пунктов среди кандидатов
+        settlements = set()
+
+        for c in candidates:
+            settlement = None
+            for kw in location_keywords:
+                # Ищем паттерн: "деревня Название"
+                match = re.search(rf'{kw}\s+([а-яА-ЯёЁ\-]+)', c['address_lower'])
+                if match:
+                    settlement = match.group(1).lower()
+                    break
+            if settlement:
+                settlements.add(settlement)
+
+        if len(settlements) > 1:
+            print(f"[DEBUG] Неоднозначный запрос: найдены адреса в разных населенных пунктах: {list(settlements)}")
+            print("[DEBUG] Добавьте в запрос название населенного пункта (деревня, посёлок, село, город)")
+            return []
 
     # Считаем баллы
     scored_candidates = []
@@ -661,6 +704,23 @@ def find_tinao_candidates_by_references(
             if mun.lower() in query_lower and mun.lower() in c['address_lower']:
                 score += 15
                 break
+
+        # Бонус за точное совпадение номера дома
+        house_match = re.search(r'дом\s+(\d+)', c['address_lower'])
+        if house_match:
+            house_number = house_match.group(1)
+            if house_number in all_numbers_in_query:
+                score += 30
+                print(f"[DEBUG] Бонус за совпадение номера дома: {house_number}")
+
+        # Бонус за совпадение микрорайона
+        if 'микрорайон' in query_lower:
+            micro_match = re.search(r'микрорайон\s+["\']?([а-яА-Я\d]+)["\']?', query_lower)
+            if micro_match:
+                micro_name = micro_match.group(1).lower()
+                if micro_name in c['address_lower']:
+                    score += 25
+                    print(f"[DEBUG] Бонус за совпадение микрорайона: {micro_name}")
 
         scored_candidates.append({
             'index': c['index'],

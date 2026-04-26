@@ -610,8 +610,15 @@ class AddressMatcher:
             if choice.isdigit() and 1 <= int(choice) <= len(candidates):
                 best = candidates[int(choice) - 1]
 
+                # Получаем строку по индексу для вывода округа и района
+        row = self.df.iloc[best['index']]
+
         print("\n✅ Найден адрес:")
         print(f"   УНОМ: {best['unom']}")
+        if 'Округ' in self.df.columns and pd.notna(row.get('Округ')):
+            print(f"   Округ: {row['Округ']}")
+        if 'Район' in self.df.columns and pd.notna(row.get('Район')):
+            print(f"   Район: {row['Район']}")
         print(f"   Адрес: {best['address']}")
         if best.get('exact_match', False):
             print("   Тип: Точное совпадение по индексу")
