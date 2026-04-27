@@ -99,6 +99,12 @@ def normalize_address(address, apply_reverse=False):
     address = str(address).lower().strip()
     address = address.replace('ё', 'е')
 
+    # ===== ОБРАБОТКА "город Москва" И ЕГО СКЛОНЕНИЙ =====
+    # Удаляем упоминания Москвы (они не нужны для поиска улицы)
+    address = re.sub(r'\bгород\s+москв[ауеы]?\b', '', address, flags=re.IGNORECASE)
+    address = re.sub(r'\bг\.?\s*москв[ауеы]?\b', '', address, flags=re.IGNORECASE)
+    address = re.sub(r'\bмоскв[ауеы]?\b', '', address, flags=re.IGNORECASE)
+
     # Применяем реверс ТОЛЬКО для поисковых запросов
     if apply_reverse:
         from src.street_variants import reverse_street_words

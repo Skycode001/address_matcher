@@ -499,10 +499,10 @@ def find_tinao_candidates_by_references(
     filtered_df = filter_by_tinao_district(df)
 
     if filtered_df.empty:
-        print("[DEBUG] Нет адресов в округах ТиНАО")
+        # print("[DEBUG] Нет адресов в округах ТиНАО")
         return []
 
-    print(f"[DEBUG] Фильтрация по ТиНАО: {len(df)} -> {len(filtered_df)} адресов")
+    # print(f"[DEBUG] Фильтрация по ТиНАО: {len(df)} -> {len(filtered_df)} адресов")
 
     query_lower = query.lower()
 
@@ -516,21 +516,21 @@ def find_tinao_candidates_by_references(
     search_query = re.sub(r'[, ]+', ' ', search_query).strip()
     search_query = search_query.replace('"', '').replace("'", "")
 
-    print(f"\n[DEBUG] Поиск по ТиНАО для запроса: {query}")
-    print(f"[DEBUG] Нормализованный запрос: {query_normalized}")
-    print(f"[DEBUG] Поисковая строка (без ключевых слов): {search_query}")
+    # print(f"\n[DEBUG] Поиск по ТиНАО для запроса: {query}")
+    # print(f"[DEBUG] Нормализованный запрос: {query_normalized}")
+    # print(f"[DEBUG] Поисковая строка (без ключевых слов): {search_query}")
 
     # Разбиваем на ключевые слова
     keywords = []
     for w in search_query.split():
         if len(w) >= 2 or w.isdigit() or w.replace('-', '').isdigit():
             keywords.append(w)
-    print(f"[DEBUG] Ключевые слова: {keywords}")
+    # print(f"[DEBUG] Ключевые слова: {keywords}")
 
     # Извлекаем порядковые числительные (6-я, 5-й и т.д.)
     ordinal_pattern = re.compile(r'\b(\d+)-[яйе]\b')
     ordinals_in_query = ordinal_pattern.findall(search_query)
-    print(f"[DEBUG] Порядковые числительные в запросе: {ordinals_in_query}")
+    # print(f"[DEBUG] Порядковые числительные в запросе: {ordinals_in_query}")
 
     # Функция для извлечения чисел, исключая порядковые числительные
     def extract_numbers_ignore_ordinal(text):
@@ -538,7 +538,7 @@ def find_tinao_candidates_by_references(
         return set(re.findall(r'\b(\d+)\b', text_without_ordinal))
 
     all_numbers_in_query = extract_numbers_ignore_ordinal(search_query)
-    print(f"[DEBUG] Все числа в запросе (без порядковых): {all_numbers_in_query}")
+    # print(f"[DEBUG] Все числа в запросе (без порядковых): {all_numbers_in_query}")
 
     # Извлекаем все числа и их контекст из запроса
     numbers_with_context = []
@@ -555,15 +555,15 @@ def find_tinao_candidates_by_references(
                 'type': match[0],
                 'number': match[1]
             })
-            print(f"[DEBUG] Найден контекст: {match[0]}={match[1]}")
+            # print(f"[DEBUG] Найден контекст: {match[0]}={match[1]}")
 
     # Извлекаем простые числа
     simple_numbers = [w for w in search_query.split() if re.match(r'^\d+$', w)]
-    print(f"[DEBUG] Простые числа: {simple_numbers}")
+    # print(f"[DEBUG] Простые числа: {simple_numbers}")
 
     # Извлекаем числа с буквами
     numbers_with_letters = [w for w in search_query.split() if re.match(r'^\d+[А-Яа-я/]+$', w)]
-    print(f"[DEBUG] Числа с буквами: {numbers_with_letters}")
+    # print(f"[DEBUG] Числа с буквами: {numbers_with_letters}")
 
     addresses = filtered_df['Адрес'].tolist()
     unoms = filtered_df['УНОМ'].tolist()
@@ -573,10 +573,10 @@ def find_tinao_candidates_by_references(
         # Фильтруем нормализованные адреса по тем же индексам
         filtered_indices = filtered_df.index.tolist()
         filtered_normalized = [normalized_addresses[i] for i in filtered_indices]
-        print("[DEBUG] Используем предварительно нормализованные адреса (быстро)")
+        # print("[DEBUG] Используем предварительно нормализованные адреса (быстро)")
     else:
         # Если не переданы - нормализуем сейчас (медленно, только для первого раза)
-        print("[DEBUG] Предварительно нормализованные адреса не найдены, нормализуем сейчас...")
+        # print("[DEBUG] Предварительно нормализованные адреса не найдены, нормализуем сейчас...")
         filtered_normalized = [normalize_tinao_text(addr) for addr in addresses]
 
     candidates = []
@@ -663,7 +663,7 @@ def find_tinao_candidates_by_references(
         all_numbers_in_address = extract_numbers_ignore_ordinal(address_normalized)
         extra_numbers = all_numbers_in_address - all_numbers_in_query
         if extra_numbers:
-            print(f"[DEBUG] Лишние числа в адресе: {extra_numbers}")
+            # print(f"[DEBUG] Лишние числа в адресе: {extra_numbers}")
             continue
 
         # ===== ПРОВЕРКА НА ЛИШНИЕ БУКВЫ В НОМЕРЕ ДОМА =====
@@ -674,7 +674,7 @@ def find_tinao_candidates_by_references(
                 # Ищем паттерн: число + буква (например, 13Б, 13А)
                 pattern_with_letter = rf'\b{num}[а-яА-Я]\b'
                 if re.search(pattern_with_letter, address_lower):
-                    print(f"[DEBUG] Отклоняем кандидата: в адресе есть буква после числа {num}")
+                    # print(f"[DEBUG] Отклоняем кандидата: в адресе есть буква после числа {num}")
                     reject_due_to_letter = True
                     break
         if reject_due_to_letter:
@@ -689,7 +689,7 @@ def find_tinao_candidates_by_references(
         })
 
     if not candidates:
-        print("[DEBUG] Кандидатов не найдено")
+        # print("[DEBUG] Кандидатов не найдено")
         return []
 
     # ===== ПРОВЕРКА НА НЕОДНОЗНАЧНОСТЬ =====
@@ -716,8 +716,8 @@ def find_tinao_candidates_by_references(
                 settlements.add(settlement)
 
         if len(settlements) > 1:
-            print(f"[DEBUG] Неоднозначный запрос: найдены адреса в разных населенных пунктах: {list(settlements)}")
-            print("[DEBUG] Добавьте в запрос название населенного пункта (деревня, посёлок, село, город)")
+            # print(f"[DEBUG] Неоднозначный запрос: найдены адреса в разных населенных пунктах: {list(settlements)}")
+            # print("[DEBUG] Добавьте в запрос название населенного пункта (деревня, посёлок, село, город)")
             return []
 
     # Считаем баллы
@@ -743,7 +743,7 @@ def find_tinao_candidates_by_references(
             house_number = house_match.group(1)
             if house_number in all_numbers_in_query:
                 score += 30
-                print(f"[DEBUG] Бонус за совпадение номера дома: {house_number}")
+                # print(f"[DEBUG] Бонус за совпадение номера дома: {house_number}")
 
         # Бонус за совпадение микрорайона
         if 'микрорайон' in query_lower:
@@ -752,7 +752,7 @@ def find_tinao_candidates_by_references(
                 micro_name = micro_match.group(1).lower()
                 if micro_name in c['address_lower']:
                     score += 25
-                    print(f"[DEBUG] Бонус за совпадение микрорайона: {micro_name}")
+                    # print(f"[DEBUG] Бонус за совпадение микрорайона: {micro_name}")
 
         scored_candidates.append({
             'index': c['index'],
@@ -763,9 +763,9 @@ def find_tinao_candidates_by_references(
 
     scored_candidates.sort(key=lambda x: x['tinao_score'], reverse=True)
 
-    print("[DEBUG] Топ-5 кандидатов по баллам:")
-    for i, c in enumerate(scored_candidates[:5]):
-        print(f"  {i+1}. score={c['tinao_score']}: {c['address'][:80]}...")
+    # print("[DEBUG] Топ-5 кандидатов по баллам:")
+    # for i, c in enumerate(scored_candidates[:5]):
+        # print(f"  {i+1}. score={c['tinao_score']}: {c['address'][:80]}...")
 
     return scored_candidates[:top_n]
 

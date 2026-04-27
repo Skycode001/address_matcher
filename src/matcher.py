@@ -6,16 +6,17 @@ from collections import defaultdict
 import joblib
 import pandas as pd
 from rapidfuzz import fuzz, process
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.utils import extract_house_number, extract_street_name, generate_features, normalize_address
-from src.zamkad import (
+from src.tinao import (
     find_tinao_candidates_by_references,
     get_tinao_score_details,
     is_tinao_query,
     rank_candidates_by_tinao,
 )
+from src.utils import extract_house_number, extract_street_name, generate_features, normalize_address
 
 
 class AddressMatcher:
@@ -29,12 +30,12 @@ class AddressMatcher:
 
         print("Предварительная обработка адресов...")
         self.normalized_addresses = []
-        for addr in self.addresses:
+        for addr in tqdm(self.addresses, desc="Нормализация адресов", unit="адрес"):
             try:
                 norm_addr = normalize_address(addr, apply_reverse=False)
                 self.normalized_addresses.append(norm_addr)
             except Exception as e:
-                print(f"Ошибка нормализации адреса: {addr}, ошибка: {e}")
+                print(f"\nОшибка нормализации адреса: {addr}, ошибка: {e}")
                 self.normalized_addresses.append("")
 
         if use_index:
@@ -381,7 +382,7 @@ class AddressMatcher:
 
         # ===== ЕСЛИ ЗАПРОС ИЗ ТИНАО - ИЩЕМ ТОЛЬКО В ТИНАО И СРАЗУ ВОЗВРАЩАЕМ =====
         if is_tinao_query(query):
-            print("[DEBUG] Запрос из ТиНАО, ищем только в ТиНАО...")
+            # print("[DEBUG] Запрос из ТиНАО, ищем только в ТиНАО...")
             tinao_candidates = find_tinao_candidates_by_references(
                 query,
                 self.df,
@@ -389,7 +390,7 @@ class AddressMatcher:
                 top_n=top_n
             )
             if tinao_candidates:
-                print(f"[DEBUG] Найдено {len(tinao_candidates)} кандидатов в ТиНАО")
+                # print(f"[DEBUG] Найдено {len(tinao_candidates)} кандидатов в ТиНАО")
                 result = []
                 for tc in tinao_candidates:
                     result.append({
@@ -404,16 +405,16 @@ class AddressMatcher:
                         'ml_score': min(0.95, 0.7 + (tc.get('tinao_score', 0) / 10)),
                     })
                 # Выводим результат сразу
-                best = result[0]
-                print("\n✅ Найден адрес (ТиНАО):")
-                print(f"   УНОМ: {best['unom']}")
-                print(f"   Адрес: {best['address']}")
-                print(f"   Уверенность: {best['final_score']:.2%}")
-                if best.get('tinao_score', 0) > 0:
-                    print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
+                # best = result[0]
+                # print("\n✅ Найден адрес (ТиНАО):")
+                # print(f"   УНОМ: {best['unom']}")
+                # print(f"   Адрес: {best['address']}")
+                # print(f"   Уверенность: {best['final_score']:.2%}")
+                # if best.get('tinao_score', 0) > 0:
+                    # print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
                 return result
-            else:
-                print("[DEBUG] Кандидатов в ТиНАО не найдено, продолжаем обычный поиск")
+            # else:
+                # print("[DEBUG] Кандидатов в ТиНАО не найдено, продолжаем обычный поиск")
 
         # ===== ОБЫЧНЫЙ ПОИСК (ЕСЛИ НЕ ТИНАО ИЛИ НИЧЕГО НЕ НАШЛИ) =====
         street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
@@ -610,7 +611,8 @@ class AddressMatcher:
             if choice.isdigit() and 1 <= int(choice) <= len(candidates):
                 best = candidates[int(choice) - 1]
 
-                # Получаем строку по индексу для вывода округа и района
+
+        # Получаем строку по индексу для вывода округа и района
         row = self.df.iloc[best['index']]
 
         print("\n✅ Найден адрес:")
