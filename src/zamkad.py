@@ -398,6 +398,15 @@ ALL_REFERENCES = {
     **SETTLEMENT_REF,
 }
 
+# Синонимы для нормализации ТиНАО
+# в случае если в поиске вписали про москву
+# нормализовалось в базой тк там нет про мск
+TINAO_SYNONYMS = {
+    'город москва': '',
+    'г москва': '',
+    'г. москва': '',
+    'москва': '',
+}
 
 def normalize_tinao_text(text: str) -> str:
     """
@@ -407,10 +416,16 @@ def normalize_tinao_text(text: str) -> str:
         return ""
     result = normalize_address(text, apply_reverse=False)
 
-    # Удаляем стоп-слова, которые не влияют на идентификацию адреса
+    # Удаляем стоп-слова
     result = re.sub(r'\bрайон\b', '', result)
     result = re.sub(r'\bр-н\b', '', result)
     result = re.sub(r'\bрн\b', '', result)
+
+    # Удаляем "город москва", "москва" и т.д.
+    result = re.sub(r'\bгород\s+москва\b', '', result)
+    result = re.sub(r'\bг\s+москва\b', '', result)
+    result = re.sub(r'\bг\.\s+москва\b', '', result)
+    result = re.sub(r'\bмосква\b', '', result)
 
     # Очищаем лишние пробелы
     result = re.sub(r'\s+', ' ', result).strip()
@@ -471,7 +486,6 @@ def find_tinao_candidates_by_references(
 ) -> List[Dict]:
     """
     Ищет кандидатов в отфильтрованной по округам базе по совпадениям со справочниками ТиНАО.
-    
     Args:
         query: Запрос пользователя
         df: DataFrame с адресами
@@ -579,9 +593,27 @@ def find_tinao_candidates_by_references(
         for kw in keywords:
             if kw in ordinals_in_query:
                 continue
-            if kw not in address_normalized:
-                all_keywords_found = False
-                break
+
+            # Прямая проверка
+            if kw in address_normalized:
+                continue
+
+            # Специальная проверка: если это название (не служебное слово)
+            # Проверяем в формате "муниципальный округ X"
+            stop_words = {'деревня', 'поселок', 'село', 'город', 'дом', 'улица',
+                         'проспект', 'бульвар', 'переулок', 'шоссе', 'набережная',
+                         'площадь', 'микрорайон', 'строение', 'корпус', 'владение'}
+
+            if kw not in stop_words and len(kw) > 2:
+                # Ищем в формате "муниципальный округ X" или "городской округ X"
+                if re.search(r'муниципальный\s+округ\s+' + re.escape(kw), address_normalized):
+                    continue
+                if re.search(r'городской\s+округ\s+' + re.escape(kw), address_normalized):
+                    continue
+
+            # Если ничего не подошло - слово не найдено
+            all_keywords_found = False
+            break
 
         if not all_keywords_found:
             continue
