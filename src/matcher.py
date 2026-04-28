@@ -14,9 +14,13 @@ from src.tinao import (
     find_tinao_candidates_by_references,
     get_tinao_score_details,
     is_tinao_query,
-    rank_candidates_by_tinao,
 )
 from src.utils import extract_house_number, extract_street_name, generate_features, normalize_address
+from src.zelao import (
+    find_zelao_candidates_by_references,
+    get_zelao_score_details,
+    is_zelao_query,
+)
 
 
 class AddressMatcher:
@@ -382,15 +386,13 @@ class AddressMatcher:
 
         # ===== ЕСЛИ ЗАПРОС ИЗ ТИНАО - ИЩЕМ ТОЛЬКО В ТИНАО И СРАЗУ ВОЗВРАЩАЕМ =====
         if is_tinao_query(query):
-            # print("[DEBUG] Запрос из ТиНАО, ищем только в ТиНАО...")
             tinao_candidates = find_tinao_candidates_by_references(
                 query,
                 self.df,
-                normalized_addresses=self.normalized_addresses,  # ← передаем готовые нормализованные адреса
+                normalized_addresses=self.normalized_addresses,
                 top_n=top_n
             )
             if tinao_candidates:
-                # print(f"[DEBUG] Найдено {len(tinao_candidates)} кандидатов в ТиНАО")
                 result = []
                 for tc in tinao_candidates:
                     result.append({
@@ -404,19 +406,33 @@ class AddressMatcher:
                         'final_score': min(0.95, 0.7 + (tc.get('tinao_score', 0) / 10)),
                         'ml_score': min(0.95, 0.7 + (tc.get('tinao_score', 0) / 10)),
                     })
-                # Выводим результат сразу
-                # best = result[0]
-                # print("\n✅ Найден адрес (ТиНАО):")
-                # print(f"   УНОМ: {best['unom']}")
-                # print(f"   Адрес: {best['address']}")
-                # print(f"   Уверенность: {best['final_score']:.2%}")
-                # if best.get('tinao_score', 0) > 0:
-                    # print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
                 return result
-            # else:
-                # print("[DEBUG] Кандидатов в ТиНАО не найдено, продолжаем обычный поиск")
 
-        # ===== ОБЫЧНЫЙ ПОИСК (ЕСЛИ НЕ ТИНАО ИЛИ НИЧЕГО НЕ НАШЛИ) =====
+        # ===== ЕСЛИ ЗАПРОС ИЗ ЗЕЛАО - ИЩЕМ ТОЛЬКО В ЗЕЛАО И СРАЗУ ВОЗВРАЩАЕМ =====
+        if is_zelao_query(query):
+            zelao_candidates = find_zelao_candidates_by_references(
+                query,
+                self.df,
+                normalized_addresses=self.normalized_addresses,
+                top_n=top_n
+            )
+            if zelao_candidates:
+                result = []
+                for zc in zelao_candidates:
+                    result.append({
+                        'index': zc['index'],
+                        'address': zc['address'],
+                        'unom': zc['unom'],
+                        'id': self.ids[zc['index']],
+                        'fuzzy_score': 85,
+                        'exact_match': False,
+                        'zelao_score': zc.get('zelao_score', 0),
+                        'final_score': min(0.95, 0.7 + (zc.get('zelao_score', 0) / 10)),
+                        'ml_score': min(0.95, 0.7 + (zc.get('zelao_score', 0) / 10)),
+                    })
+                return result
+
+        # ===== ОБЫЧНЫЙ ПОИСК (ЕСЛИ НЕ СПЕЦИАЛЬНЫЙ ЗАПРОС ИЛИ НИЧЕГО НЕ НАШЛИ) =====
         street_type_pattern = r'^(ул|улица|проспект|бульвар|переулок|пр-т|б-р|просп|пл|площадь|наб|набережная|ш|шоссе)'
         has_explicit_type = bool(re.search(street_type_pattern, query.lower().strip()))
 
@@ -527,10 +543,6 @@ class AddressMatcher:
                 candidate['ml_score'] = candidate['fuzzy_score'] / 100
             candidates.sort(key=lambda x: x['final_score'], reverse=True)
 
-        # Ранжируем кандидатов по ТиНАО (если запрос относится к ТиНАО)
-        if is_tinao_query(query):
-            candidates = rank_candidates_by_tinao(candidates, query)
-
         return candidates
 
     def debug_fuzzy_search(self, query):
@@ -583,6 +595,15 @@ class AddressMatcher:
                 matches_str = ', '.join(tinao_info['matches'][:5])
                 print(f"   Совпадения: {matches_str}")
 
+        # Определяем принадлежность к ЗелАО (только для информации)
+        zelao_info = get_zelao_score_details(query)
+        if zelao_info['is_zelao']:
+            print("🗺️ Определен адрес в ЗелАО")
+            print(f"   Уверенность: {zelao_info['confidence']} ({zelao_info['score']} совпадений)")
+            if zelao_info['matches']:
+                matches_str = ', '.join(zelao_info['matches'][:5])
+                print(f"   Совпадения: {matches_str}")
+
         candidates = self.find_best_match(query)
 
         elapsed_time = (time.time() - start_time) * 1000
@@ -606,11 +627,12 @@ class AddressMatcher:
                 print(f"     Уверенность: {cand['final_score']:.2%} (ML: {cand.get('ml_score', 0):.2%})")
                 if cand.get('tinao_score', 0) > 0:
                     print(f"     ТиНАО: +{cand['tinao_score']} баллов")
+                if cand.get('zelao_score', 0) > 0:
+                    print(f"     ЗелАО: +{cand['zelao_score']} баллов")
 
             choice = input("\nВыберите номер или нажмите Enter для первого: ")
             if choice.isdigit() and 1 <= int(choice) <= len(candidates):
                 best = candidates[int(choice) - 1]
-
 
         # Получаем строку по индексу для вывода округа и района
         row = self.df.iloc[best['index']]
@@ -627,6 +649,8 @@ class AddressMatcher:
         print(f"   Уверенность: {best['final_score']:.2%}")
         if best.get('tinao_score', 0) > 0:
             print(f"   ТиНАО: +{best['tinao_score']} баллов совпадений")
+        if best.get('zelao_score', 0) > 0:
+            print(f"   ЗелАО: +{best['zelao_score']} баллов совпадений")
 
         return best
 
