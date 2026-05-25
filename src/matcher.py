@@ -673,14 +673,12 @@ class AddressMatcher:
 
     def process_file(self, file_path: str, output_path: str = None) -> pd.DataFrame:
         """
-        Обрабатывает файл с адресами и добавляет колонку УНОМ.
-
+        Обрабатывает файл с адресами и добавляет колонку УНОМ и Район.
         Args:
             file_path: Путь к входному файлу (CSV или Excel)
             output_path: Путь для сохранения результата (опционально)
-
         Returns:
-            DataFrame с добавленной колонкой УНОМ
+            DataFrame с добавленной колонкой УНОМ и Район (если была колонка Район)
         """
 
         # Определяем тип файла по расширению
@@ -691,32 +689,82 @@ class AddressMatcher:
         # Загружаем файл с правильным движком
         df_input = None
         sheet_name = None
+        has_rayon_column = False
+        has_okrug_column = False
+
+        # Словарь для переименования колонок (нормализация)
+        column_mapping = {}
 
         try:
             if file_ext == '.csv':
                 df_input = pd.read_csv(file_path)
+                # Нормализуем названия колонок (приводим к нижнему регистру)
+                for col in df_input.columns:
+                    col_lower = col.lower()
+                    if col_lower == 'адрес':
+                        column_mapping[col] = 'Адрес'
+                    elif col_lower == 'район':
+                        column_mapping[col] = 'Район'
+                        has_rayon_column = True
+                    elif col_lower == 'округ':
+                        column_mapping[col] = 'Округ'
+                        has_okrug_column = True
+                    elif col_lower == 'уном':
+                        column_mapping[col] = 'УНОМ'
+
+                # Переименовываем колонки
+                if column_mapping:
+                    df_input = df_input.rename(columns=column_mapping)
+
             elif file_ext in ['.xlsx', '.xls']:
                 # Получаем список всех листов в файле
                 xl_file = pd.ExcelFile(file_path, engine='openpyxl')
                 sheet_names = xl_file.sheet_names
                 print(f"   📑 Найдено листов: {len(sheet_names)}")
 
-                # Проверяем каждый лист на наличие колонки "Адрес"
-                for idx, sheet in enumerate(sheet_names, 1):
+                # Проверяем ТОЛЬКО ПЕРВЫЕ ДВА листа на наличие колонки "Адрес"
+                sheets_to_check = sheet_names[:2]
+
+                for idx, sheet in enumerate(sheets_to_check, 1):
                     print(f"   🔍 Проверка листа {idx}: '{sheet}'...")
                     try:
-                        temp_df = pd.read_excel(file_path, sheet_name=sheet, engine='openpyxl')
-                        if 'Адрес' in temp_df.columns:
+                        # Читаем лист, все колонки как строки
+                        temp_df = pd.read_excel(file_path, sheet_name=sheet, engine='openpyxl', dtype=str)
+
+                        # Нормализуем названия колонок (приводим к нижнему регистру для поиска)
+                        col_mapping = {}
+                        for col in temp_df.columns:
+                            col_lower = col.lower()
+                            if col_lower == 'адрес':
+                                col_mapping[col] = 'Адрес'
+                            elif col_lower == 'район':
+                                col_mapping[col] = 'Район'
+                                has_rayon_column = True
+                            elif col_lower == 'округ':
+                                col_mapping[col] = 'Округ'
+                                has_okrug_column = True
+                            elif col_lower == 'уном':
+                                col_mapping[col] = 'УНОМ'
+
+                        # Если нашли колонку 'Адрес' (в любом регистре)
+                        if any(col_lower == 'адрес' for col_lower in [c.lower() for c in temp_df.columns]):
+                            # Переименовываем колонки
+                            if col_mapping:
+                                temp_df = temp_df.rename(columns=col_mapping)
                             df_input = temp_df
                             sheet_name = sheet
                             print(f"   ✅ Найден столбец 'Адрес' на листе '{sheet}'")
+                            if has_rayon_column:
+                                print(f"   ✅ Найден столбец 'Район' на листе '{sheet}'")
+                            if has_okrug_column:
+                                print(f"   ✅ Найден столбец 'Округ' на листе '{sheet}'")
                             break
                     except Exception as e:
                         print(f"   ⚠️ Ошибка чтения листа '{sheet}': {e}")
                         continue
 
                 if df_input is None:
-                    raise ValueError("На всех листах файла отсутствует столбец 'Адрес'")
+                    raise ValueError("На первых двух листах файла отсутствует столбец 'Адрес' (в любом регистре)")
             else:
                 raise ValueError(f"Неподдерживаемый формат файла: {file_ext}. Используйте .csv или .xlsx")
 
@@ -726,43 +774,68 @@ class AddressMatcher:
             raise ValueError(f"Ошибка загрузки файла: {e}")
 
         print(f"   ✅ Загружено {len(df_input)} строк")
-        print(f"   📋 Колонки: {list(df_input.columns)}")
 
         # Создаем колонку УНОМ (если её еще нет)
         if 'УНОМ' not in df_input.columns:
             df_input['УНОМ'] = pd.NA
         else:
-            # Если колонка уже есть, очищаем её
             df_input['УНОМ'] = pd.NA
-
-        print(f"\n🔍 Поиск УНОМ для {len(df_input)} адресов...")
-        print("-" * 50)
 
         # Обрабатываем каждый адрес
         found_count = 0
         not_found_count = 0
-        total_rows = len(df_input)
+        tinao_added_count = 0
+        zelao_added_count = 0
 
         for idx, row in df_input.iterrows():
             address = row['Адрес']
             if pd.isna(address) or not str(address).strip():
-                # Пропускаем пустые строки
                 continue
 
-            percent = ((idx + 1) / total_rows) * 100
-            print(f"\n[{idx + 1}/{total_rows}] ({percent:.1f}%) Обработка: {str(address)[:80]}...")
+            original_address = str(address)
+            search_address = original_address
+
+            # Проверяем, нужно ли добавить ключевое слово к поисковому запросу
+            add_tinao = False
+            add_zelao = False
+
+            if has_okrug_column and pd.notna(row.get('Округ')):
+                okrug_value = str(row['Округ']).lower()
+
+                # Для ТиНАО
+                if 'тинао' in okrug_value or 'троицк' in okrug_value or 'новомосковский' in okrug_value:
+                    if 'тинао' not in original_address.lower() and 'троицк' not in original_address.lower():
+                        search_address = f"тинао {original_address}"
+                        add_tinao = True
+
+                # Для ЗелАО
+                if 'зелао' in okrug_value or 'зеленоград' in okrug_value:
+                    if 'зеленоград' not in original_address.lower() and 'зелао' not in original_address.lower():
+                        if add_tinao:
+                            search_address = f"зеленоград {search_address}"
+                        else:
+                            search_address = f"зеленоград {original_address}"
+                        add_zelao = True
 
             # Ищем адрес
-            candidates = self.find_best_match(str(address))
+            candidates = self.find_best_match(search_address)
 
             if candidates and candidates[0]['final_score'] >= 0.4:
                 best = candidates[0]
                 df_input.at[idx, 'УНОМ'] = best['unom']
                 found_count += 1
-                print(f"   ✅ Найден УНОМ: {best['unom']} (уверенность: {best['final_score']:.2%})")
+                if add_tinao:
+                    tinao_added_count += 1
+                if add_zelao:
+                    zelao_added_count += 1
+
+                # Если есть колонка Район, заполняем её
+                if has_rayon_column:
+                    row_df = self.df.iloc[best['index']]
+                    if 'Район' in self.df.columns and pd.notna(row_df.get('Район')):
+                        df_input.at[idx, 'Район'] = str(row_df['Район'])
             else:
                 not_found_count += 1
-                print("   ❌ УНОМ не найден")
 
         # Выводим статистику
         print("\n" + "=" * 50)
@@ -773,6 +846,10 @@ class AddressMatcher:
             print(f"   ✅ Найдено УНОМ: {found_count}")
             print(f"   ❌ Не найдено: {not_found_count}")
             print(f"   📊 Успешность: {found_count / total * 100:.1f}%")
+            if tinao_added_count > 0:
+                print(f"   🔧 Автоматически добавлено 'тинао': {tinao_added_count}")
+            if zelao_added_count > 0:
+                print(f"   🔧 Автоматически добавлено 'зеленоград': {zelao_added_count}")
 
         # Сохраняем результат
         if output_path is None:
@@ -785,7 +862,6 @@ class AddressMatcher:
             if file_ext == '.csv':
                 df_input.to_csv(output_path, index=False, encoding='utf-8-sig')
             else:
-                # Сохраняем с указанием sheet_name, если нашли нужный лист
                 if sheet_name:
                     df_input.to_excel(output_path, index=False, sheet_name=sheet_name, engine='openpyxl')
                 else:
