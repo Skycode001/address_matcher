@@ -671,6 +671,130 @@ class AddressMatcher:
                 })
         return results
 
+    def process_file(self, file_path: str, output_path: str = None) -> pd.DataFrame:
+        """
+        Обрабатывает файл с адресами и добавляет колонку УНОМ.
+
+        Args:
+            file_path: Путь к входному файлу (CSV или Excel)
+            output_path: Путь для сохранения результата (опционально)
+
+        Returns:
+            DataFrame с добавленной колонкой УНОМ
+        """
+
+        # Определяем тип файла по расширению
+        file_ext = os.path.splitext(file_path)[1].lower()
+
+        print(f"\n📂 Загрузка файла: {file_path}")
+
+        # Загружаем файл с правильным движком
+        df_input = None
+        sheet_name = None
+
+        try:
+            if file_ext == '.csv':
+                df_input = pd.read_csv(file_path)
+            elif file_ext in ['.xlsx', '.xls']:
+                # Получаем список всех листов в файле
+                xl_file = pd.ExcelFile(file_path, engine='openpyxl')
+                sheet_names = xl_file.sheet_names
+                print(f"   📑 Найдено листов: {len(sheet_names)}")
+
+                # Проверяем каждый лист на наличие колонки "Адрес"
+                for idx, sheet in enumerate(sheet_names, 1):
+                    print(f"   🔍 Проверка листа {idx}: '{sheet}'...")
+                    try:
+                        temp_df = pd.read_excel(file_path, sheet_name=sheet, engine='openpyxl')
+                        if 'Адрес' in temp_df.columns:
+                            df_input = temp_df
+                            sheet_name = sheet
+                            print(f"   ✅ Найден столбец 'Адрес' на листе '{sheet}'")
+                            break
+                    except Exception as e:
+                        print(f"   ⚠️ Ошибка чтения листа '{sheet}': {e}")
+                        continue
+
+                if df_input is None:
+                    raise ValueError("На всех листах файла отсутствует столбец 'Адрес'")
+            else:
+                raise ValueError(f"Неподдерживаемый формат файла: {file_ext}. Используйте .csv или .xlsx")
+
+        except ImportError:
+            raise ImportError("Для работы с Excel файлами необходим пакет 'openpyxl'. Установите его командой: pip install openpyxl")
+        except Exception as e:
+            raise ValueError(f"Ошибка загрузки файла: {e}")
+
+        print(f"   ✅ Загружено {len(df_input)} строк")
+        print(f"   📋 Колонки: {list(df_input.columns)}")
+
+        # Создаем колонку УНОМ (если её еще нет)
+        if 'УНОМ' not in df_input.columns:
+            df_input['УНОМ'] = pd.NA
+        else:
+            # Если колонка уже есть, очищаем её
+            df_input['УНОМ'] = pd.NA
+
+        print(f"\n🔍 Поиск УНОМ для {len(df_input)} адресов...")
+        print("-" * 50)
+
+        # Обрабатываем каждый адрес
+        found_count = 0
+        not_found_count = 0
+        total_rows = len(df_input)
+
+        for idx, row in df_input.iterrows():
+            address = row['Адрес']
+            if pd.isna(address) or not str(address).strip():
+                # Пропускаем пустые строки
+                continue
+
+            percent = ((idx + 1) / total_rows) * 100
+            print(f"\n[{idx + 1}/{total_rows}] ({percent:.1f}%) Обработка: {str(address)[:80]}...")
+
+            # Ищем адрес
+            candidates = self.find_best_match(str(address))
+
+            if candidates and candidates[0]['final_score'] >= 0.4:
+                best = candidates[0]
+                df_input.at[idx, 'УНОМ'] = best['unom']
+                found_count += 1
+                print(f"   ✅ Найден УНОМ: {best['unom']} (уверенность: {best['final_score']:.2%})")
+            else:
+                not_found_count += 1
+                print("   ❌ УНОМ не найден")
+
+        # Выводим статистику
+        print("\n" + "=" * 50)
+        print("📊 СТАТИСТИКА ОБРАБОТКИ")
+        print("=" * 50)
+        total = found_count + not_found_count
+        if total > 0:
+            print(f"   ✅ Найдено УНОМ: {found_count}")
+            print(f"   ❌ Не найдено: {not_found_count}")
+            print(f"   📊 Успешность: {found_count / total * 100:.1f}%")
+
+        # Сохраняем результат
+        if output_path is None:
+            base_name = os.path.splitext(file_path)[0]
+            output_path = f"{base_name}_with_unom{file_ext}"
+
+        print(f"\n💾 Сохранение результата в: {output_path}")
+
+        try:
+            if file_ext == '.csv':
+                df_input.to_csv(output_path, index=False, encoding='utf-8-sig')
+            else:
+                # Сохраняем с указанием sheet_name, если нашли нужный лист
+                if sheet_name:
+                    df_input.to_excel(output_path, index=False, sheet_name=sheet_name, engine='openpyxl')
+                else:
+                    df_input.to_excel(output_path, index=False, engine='openpyxl')
+            print("   ✅ Сохранено!")
+        except Exception as e:
+            print(f"   ❌ Ошибка сохранения: {e}")
+
+        return df_input
 
 def run_interactive():
     """
