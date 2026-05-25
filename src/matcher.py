@@ -672,7 +672,10 @@ class AddressMatcher:
         return results
 
 
-def main():
+def run_interactive():
+    """
+    Запуск интерактивного режима (для обратной совместимости)
+    """
     print("Загрузка базы адресов...")
     df = pd.read_csv('data/addresses.csv')
     print(f"Загружено {len(df)} адресов")
@@ -718,4 +721,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Для обратной совместимости: если запускаем matcher.py напрямую
+    run_interactive()
