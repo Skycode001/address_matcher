@@ -634,15 +634,28 @@ class AddressMatcher:
             if choice.isdigit() and 1 <= int(choice) <= len(candidates):
                 best = candidates[int(choice) - 1]
 
-        # Получаем строку по индексу для вывода округа и района
+        # Получаем строку по индексу для вывода ВСЕХ данных
         row = self.df.iloc[best['index']]
 
         print("\n✅ Найден адрес:")
         print(f"   УНОМ: {best['unom']}")
-        if 'Округ' in self.df.columns and pd.notna(row.get('Округ')):
-            print(f"   Округ: {row['Округ']}")
-        if 'Район' in self.df.columns and pd.notna(row.get('Район')):
-            print(f"   Район: {row['Район']}")
+
+        # Выводим все колонки из базы, кроме стандартных (Адрес, УНОМ, ID)
+        exclude_columns = ['Адрес', 'УНОМ', 'ID']
+
+        # Сортируем колонки для красивого вывода
+        other_columns = [col for col in self.df.columns if col not in exclude_columns]
+
+        for col in other_columns:
+            value = row.get(col)
+            if pd.notna(value) and value is not None and str(value).strip():
+                # Форматируем значение: убираем .0 у целых чисел
+                if isinstance(value, float) and value.is_integer():
+                    formatted_value = int(value)
+                else:
+                    formatted_value = value
+                print(f"   {col}: {formatted_value}")
+
         print(f"   Адрес: {best['address']}")
         if best.get('exact_match', False):
             print("   Тип: Точное совпадение по индексу")
@@ -673,12 +686,12 @@ class AddressMatcher:
 
     def process_file(self, file_path: str, output_path: str = None) -> pd.DataFrame:
         """
-        Обрабатывает файл с адресами и добавляет колонку УНОМ и Район.
+        Обрабатывает файл с адресами и добавляет ВСЕ колонки из базы данных.
         Args:
             file_path: Путь к входному файлу (CSV или Excel)
             output_path: Путь для сохранения результата (опционально)
         Returns:
-            DataFrame с добавленной колонкой УНОМ и Район (если была колонка Район)
+            DataFrame с добавленными колонками из базы данных
         """
 
         # Определяем тип файла по расширению
@@ -689,26 +702,20 @@ class AddressMatcher:
         # Загружаем файл с правильным движком
         df_input = None
         sheet_name = None
-        has_rayon_column = False
-        has_okrug_column = False
 
-        # Словарь для переименования колонок (нормализация)
-        column_mapping = {}
+        # Список колонок, которые нужно добавить (ВСЕ колонки из базы)
+        all_columns_to_add = [col for col in self.df.columns if col != 'Адрес']
 
         try:
             if file_ext == '.csv':
                 df_input = pd.read_csv(file_path)
-                # Нормализуем названия колонок (приводим к нижнему регистру)
+
+                # Нормализуем названия колонок (приводим к нижнему регистру для поиска)
+                column_mapping = {}
                 for col in df_input.columns:
                     col_lower = col.lower()
                     if col_lower == 'адрес':
                         column_mapping[col] = 'Адрес'
-                    elif col_lower == 'район':
-                        column_mapping[col] = 'Район'
-                        has_rayon_column = True
-                    elif col_lower == 'округ':
-                        column_mapping[col] = 'Округ'
-                        has_okrug_column = True
                     elif col_lower == 'уном':
                         column_mapping[col] = 'УНОМ'
 
@@ -731,33 +738,22 @@ class AddressMatcher:
                         # Читаем лист, все колонки как строки
                         temp_df = pd.read_excel(file_path, sheet_name=sheet, engine='openpyxl', dtype=str)
 
-                        # Нормализуем названия колонок (приводим к нижнему регистру для поиска)
+                        # Нормализуем названия колонок
                         col_mapping = {}
                         for col in temp_df.columns:
                             col_lower = col.lower()
                             if col_lower == 'адрес':
                                 col_mapping[col] = 'Адрес'
-                            elif col_lower == 'район':
-                                col_mapping[col] = 'Район'
-                                has_rayon_column = True
-                            elif col_lower == 'округ':
-                                col_mapping[col] = 'Округ'
-                                has_okrug_column = True
                             elif col_lower == 'уном':
                                 col_mapping[col] = 'УНОМ'
 
                         # Если нашли колонку 'Адрес' (в любом регистре)
                         if any(col_lower == 'адрес' for col_lower in [c.lower() for c in temp_df.columns]):
-                            # Переименовываем колонки
                             if col_mapping:
                                 temp_df = temp_df.rename(columns=col_mapping)
                             df_input = temp_df
                             sheet_name = sheet
                             print(f"   ✅ Найден столбец 'Адрес' на листе '{sheet}'")
-                            if has_rayon_column:
-                                print(f"   ✅ Найден столбец 'Район' на листе '{sheet}'")
-                            if has_okrug_column:
-                                print(f"   ✅ Найден столбец 'Округ' на листе '{sheet}'")
                             break
                     except Exception as e:
                         print(f"   ⚠️ Ошибка чтения листа '{sheet}': {e}")
@@ -775,17 +771,25 @@ class AddressMatcher:
 
         print(f"   ✅ Загружено {len(df_input)} строк")
 
-        # Создаем колонку УНОМ (если её еще нет)
-        if 'УНОМ' not in df_input.columns:
-            df_input['УНОМ'] = pd.NA
-        else:
-            df_input['УНОМ'] = pd.NA
+        # Создаем ВСЕ колонки из базы (если их нет в файле)
+        for col in all_columns_to_add:
+            if col not in df_input.columns:
+                df_input[col] = pd.NA
 
         # Обрабатываем каждый адрес
         found_count = 0
         not_found_count = 0
         tinao_added_count = 0
         zelao_added_count = 0
+
+        # Определяем, есть ли колонка Округ (в любом регистре)
+        has_okrug_column = any(col.lower() == 'округ' for col in df_input.columns)
+        okrug_col_name = None
+        if has_okrug_column:
+            for col in df_input.columns:
+                if col.lower() == 'округ':
+                    okrug_col_name = col
+                    break
 
         for idx, row in df_input.iterrows():
             address = row['Адрес']
@@ -799,8 +803,8 @@ class AddressMatcher:
             add_tinao = False
             add_zelao = False
 
-            if has_okrug_column and pd.notna(row.get('Округ')):
-                okrug_value = str(row['Округ']).lower()
+            if has_okrug_column and okrug_col_name and pd.notna(row.get(okrug_col_name)):
+                okrug_value = str(row[okrug_col_name]).lower()
 
                 # Для ТиНАО
                 if 'тинао' in okrug_value or 'троицк' in okrug_value or 'новомосковский' in okrug_value:
@@ -822,18 +826,17 @@ class AddressMatcher:
 
             if candidates and candidates[0]['final_score'] >= 0.4:
                 best = candidates[0]
-                df_input.at[idx, 'УНОМ'] = best['unom']
                 found_count += 1
                 if add_tinao:
                     tinao_added_count += 1
                 if add_zelao:
                     zelao_added_count += 1
 
-                # Если есть колонка Район, заполняем её
-                if has_rayon_column:
-                    row_df = self.df.iloc[best['index']]
-                    if 'Район' in self.df.columns and pd.notna(row_df.get('Район')):
-                        df_input.at[idx, 'Район'] = str(row_df['Район'])
+                # Заполняем ВСЕ колонки из базы данных
+                source_row = self.df.iloc[best['index']]
+                for col in all_columns_to_add:
+                    if col in source_row and pd.notna(source_row[col]):
+                        df_input.at[idx, col] = str(source_row[col]) if not isinstance(source_row[col], (int, float)) else source_row[col]
             else:
                 not_found_count += 1
 
@@ -854,7 +857,7 @@ class AddressMatcher:
         # Сохраняем результат
         if output_path is None:
             base_name = os.path.splitext(file_path)[0]
-            output_path = f"{base_name}_with_unom{file_ext}"
+            output_path = f"{base_name}_with_data{file_ext}"
 
         print(f"\n💾 Сохранение результата в: {output_path}")
 
