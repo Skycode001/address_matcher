@@ -5,14 +5,16 @@ Address Matcher - система поиска адресов
 
 import os
 import sys
+import warnings
 
 import pandas as pd
 
-# Добавляем путь для импорта модулей
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.matcher import AddressMatcher
 
+# Игнорируем предупреждение о смешанных типах в колонках при загрузке CSV
+warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
 
 def print_banner():
     """Выводит приветственный баннер"""
