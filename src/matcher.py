@@ -646,17 +646,32 @@ class AddressMatcher:
         # Сортируем колонки для красивого вывода
         other_columns = [col for col in self.df.columns if col not in exclude_columns]
 
+        # Списки для найденных и ненайденных полей
+        found_fields = []
+        missing_fields = []
+
         for col in other_columns:
             value = row.get(col)
-            if pd.notna(value) and value is not None and str(value).strip():
+            if pd.notna(value) and value is not None and str(value).strip() and str(value) != 'nan':
                 # Форматируем значение: убираем .0 у целых чисел
                 if isinstance(value, float) and value.is_integer():
                     formatted_value = int(value)
                 else:
                     formatted_value = value
-                print(f"   {col}: {formatted_value}")
+                found_fields.append(f"   {col}: {formatted_value}")
+            else:
+                missing_fields.append(col)
 
-        print(f"   Адрес: {best['address']}")
+        # Выводим найденные поля
+        for field in found_fields:
+            print(field)
+
+        # Выводим ненайденные поля (если есть)
+        if missing_fields:
+            print(f"\n   ❌ Не найдено: {', '.join(missing_fields)}")
+
+        # Всегда выводим адрес
+        print(f"\n   Адрес: {best['address']}")
         if best.get('exact_match', False):
             print("   Тип: Точное совпадение по индексу")
         print(f"   Уверенность: {best['final_score']:.2%}")
