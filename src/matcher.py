@@ -708,6 +708,8 @@ class AddressMatcher:
         Returns:
             DataFrame с добавленными колонками из базы данных
         """
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
 
         # Определяем тип файла по расширению
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -872,7 +874,7 @@ class AddressMatcher:
         # Сохраняем результат
         if output_path is None:
             base_name = os.path.splitext(file_path)[0]
-            output_path = f"{base_name}_with_data{file_ext}"
+            output_path = f"{base_name}_with_unom{file_ext}"
 
         print(f"\n💾 Сохранение результата в: {output_path}")
 
@@ -880,11 +882,42 @@ class AddressMatcher:
             if file_ext == '.csv':
                 df_input.to_csv(output_path, index=False, encoding='utf-8-sig')
             else:
-                if sheet_name:
-                    df_input.to_excel(output_path, index=False, sheet_name=sheet_name, engine='openpyxl')
-                else:
-                    df_input.to_excel(output_path, index=False, engine='openpyxl')
-            print("   ✅ Сохранено!")
+                # Сохраняем Excel с форматированием
+                with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                    df_input.to_excel(writer, index=False, sheet_name=sheet_name if sheet_name else 'Результат')
+
+                    # Получаем workbook и worksheet
+                    worksheet = writer.sheets[sheet_name if sheet_name else 'Результат']
+
+                    # Форматируем заголовки (жирный шрифт, выравнивание по центру)
+                    header_font = Font(bold=True)
+                    for col_idx, col_name in enumerate(df_input.columns, 1):
+                        cell = worksheet.cell(row=1, column=col_idx)
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+                    # Форматируем данные: выравнивание по левому краю
+                    for row_idx in range(2, len(df_input) + 2):
+                        for col_idx in range(1, len(df_input.columns) + 1):
+                            cell = worksheet.cell(row=row_idx, column=col_idx)
+                            cell.alignment = Alignment(horizontal='left', vertical='center')
+
+                    # Автоподбор ширины столбцов (не более 50)
+                    for col_idx, col_name in enumerate(df_input.columns, 1):
+                        column_letter = get_column_letter(col_idx)
+
+                        # Получаем максимальную длину в столбце (учитываем заголовок и данные)
+                        max_length = len(str(col_name))
+                        for row_idx in range(2, min(len(df_input) + 2, 100)):  # Проверяем первые 100 строк для скорости
+                            cell_value = worksheet.cell(row=row_idx, column=col_idx).value
+                            if cell_value:
+                                max_length = max(max_length, len(str(cell_value)))
+
+                        # Ограничиваем ширину 50 символами
+                        adjusted_width = min(max_length + 2, 50)
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+
+                print("   ✅ Сохранено с форматированием (выравнивание по левому краю, автоподбор ширины до 50)")
         except Exception as e:
             print(f"   ❌ Ошибка сохранения: {e}")
 
