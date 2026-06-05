@@ -3,9 +3,9 @@
 Address Matcher - система поиска адресов
 """
 
+import argparse
 import os
 import sys
-import argparse
 import warnings
 
 import pandas as pd
@@ -176,7 +176,7 @@ def main():
     parser.add_argument('--cache-dir', type=str, default='cache',
                        help='Папка для хранения кэша (по умолчанию: cache)')
     args = parser.parse_args()
-    
+
     if args.rebuild_cache:
         print("🔧 Режим принудительной пересборки кэша")
 

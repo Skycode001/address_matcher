@@ -1,8 +1,8 @@
+import hashlib
 import os
+import pickle
 import re
 import sys
-import hashlib
-import pickle
 from collections import defaultdict
 from datetime import datetime
 
@@ -29,7 +29,7 @@ from src.zelao import (
 class AddressMatcher:
     # Версия кэша (увеличивать вручную только при форс-пересборке)
     CACHE_VERSION = 2
-    
+
     # Файлы, изменения в которых должны вызывать пересборку кэша
     WATCHED_FILES = [
         'src/utils.py',
@@ -37,7 +37,7 @@ class AddressMatcher:
         'src/tinao.py',
         'src/zelao.py',
     ]
-    
+
     def __init__(self, addresses_df, use_index=True, cache_dir='cache', force_rebuild=False):
         self.df = addresses_df
         self.df['УНОМ'] = pd.to_numeric(self.df['УНОМ'], errors='coerce').fillna(0).astype(int)
@@ -47,13 +47,13 @@ class AddressMatcher:
         self.use_index = use_index
         self.cache_dir = cache_dir
         self.force_rebuild = force_rebuild
-        
+
         # Создаем папку для кэша
         os.makedirs(cache_dir, exist_ok=True)
-        
+
         # Загружаем или создаем кэш
         self._load_or_build_cache()
-        
+
         # Загружаем ML модель
         try:
             self.model = joblib.load('models/logistic_regression.pkl')
@@ -66,14 +66,14 @@ class AddressMatcher:
         except Exception as e:
             print(f"Ошибка загрузки модели: {e}")
             self.model_loaded = False
-    
+
     def _get_files_hash(self):
         """
         Вычисляет хэш от содержимого отслеживаемых файлов.
         При изменении любого из файлов хэш меняется → кэш пересоздается.
         """
         hash_input = ""
-        
+
         for filepath in self.WATCHED_FILES:
             full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), filepath)
             if os.path.exists(full_path):
@@ -85,16 +85,16 @@ class AddressMatcher:
                     print(f"⚠️ Ошибка чтения файла {filepath}: {e}")
             else:
                 print(f"⚠️ Файл не найден: {filepath}")
-        
+
         return hashlib.md5(hash_input.encode()).hexdigest()[:16]
-    
+
     def _get_cache_hash(self):
         """
         Вычисляет полный хэш для определения необходимости перестроения кэша.
         """
         files_hash = self._get_files_hash()
         hash_input = f"v{self.CACHE_VERSION}_{files_hash}_{len(self.addresses)}"
-        
+
         # Добавляем дату изменения CSV
         try:
             csv_path = 'data/addresses.csv'
@@ -103,16 +103,16 @@ class AddressMatcher:
                 hash_input += str(mtime)
         except:
             pass
-        
+
         return hashlib.md5(hash_input.encode()).hexdigest()[:16]
-    
+
     def _get_cache_path(self):
         """
         Возвращает путь к файлу кэша.
         """
         cache_hash = self._get_cache_hash()
         return os.path.join(self.cache_dir, f"precomputed_{cache_hash}.pkl")
-    
+
     def _load_or_build_cache(self):
         """
         Загружает кэш или создает его при отсутствии/устаревании.
@@ -122,35 +122,35 @@ class AddressMatcher:
             print("🔧 Форс-режим: принудительная пересборка кэша")
             self._build_cache(None)
             return
-        
+
         cache_path = self._get_cache_path()
-        
+
         # Проверяем существование кэша
         if os.path.exists(cache_path):
             print(f"📦 Загрузка кэша из: {cache_path}")
             try:
                 with open(cache_path, 'rb') as f:
                     cache_data = pickle.load(f)
-                
+
                 self.normalized_addresses = cache_data['normalized_addresses']
                 self.index = cache_data['index']
-                
+
                 # Проверяем, что версия кэша совпадает
                 if cache_data.get('cache_version', 0) != self.CACHE_VERSION:
                     print("⚠️ Версия кэша устарела. Пересоздаем...")
                     self._build_cache(cache_path)
                     return
-                
+
                 print(f"✅ Кэш загружен! Индекс содержит {len(self.index)} уникальных ключей")
                 print(f"   Создан: {cache_data.get('created_at', 'неизвестно')}")
                 return
             except Exception as e:
                 print(f"⚠️ Ошибка загрузки кэша: {e}. Пересоздаем...")
-        
+
         # Если кэша нет - создаем
         print("📦 Кэш не найден или устарел. Выполняем предварительную обработку...")
         self._build_cache(cache_path)
-    
+
     def _build_cache(self, cache_path):
         """
         Создает кэш (нормализация адресов и создание индекса).
@@ -164,7 +164,7 @@ class AddressMatcher:
             except Exception as e:
                 print(f"\nОшибка нормализации адреса: {addr}, ошибка: {e}")
                 self.normalized_addresses.append("")
-        
+
         if self.use_index:
             print("Создание хэш-индекса для быстрого поиска...")
             self.index = defaultdict(list)
@@ -174,14 +174,14 @@ class AddressMatcher:
                     street_only = ' '.join(norm_addr.split()[:-1]) if len(norm_addr.split()) > 1 else norm_addr
                     if street_only != norm_addr:
                         self.index[street_only].append(idx)
-                    
+
                     # Добавляем отдельные слова в индекс для быстрого поиска
                     for word in norm_addr.split():
                         if len(word) >= 4:
                             self.index[word].append(idx)
-            
+
             print(f"Индекс создан: {len(self.index)} уникальных ключей")
-        
+
         # Сохраняем в кэш, только если передан путь
         if cache_path:
             cache_data = {
@@ -191,7 +191,7 @@ class AddressMatcher:
                 'cache_version': self.CACHE_VERSION,
                 'num_addresses': len(self.addresses)
             }
-            
+
             try:
                 with open(cache_path, 'wb') as f:
                     pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
