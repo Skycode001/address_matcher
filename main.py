@@ -5,16 +5,19 @@ Address Matcher - система поиска адресов
 
 import os
 import sys
+import argparse
 import warnings
 
 import pandas as pd
 
+# Добавляем путь для импорта модулей
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.matcher import AddressMatcher
 
 # Игнорируем предупреждение о смешанных типах в колонках при загрузке CSV
 warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
+
 
 def print_banner():
     """Выводит приветственный баннер"""
@@ -35,7 +38,7 @@ def print_menu():
     print("\n" + "-" * 40)
     print("Выберите режим работы:")
     print("   1. Интерактивный режим (ручной ввод адресов)")
-    print("   2. Файловый режим (обработка файла с адресами)")
+    print("   2. Файловый режим (обогащение файла с адресами)")
     print("   3. Тестовый режим (запуск диагностики)")
     print("   0. Выход")
     print("-" * 40)
@@ -64,10 +67,8 @@ def interactive_mode(matcher):
 def check_data_file(data_dir: str = "data") -> tuple:
     """
     Проверяет наличие файла данных в папке data.
-
     Args:
         data_dir: Путь к папке с данными
-
     Returns:
         tuple: (file_path, file_type) или (None, None) если файл не найден
     """
@@ -94,10 +95,10 @@ def check_data_file(data_dir: str = "data") -> tuple:
 
 def file_mode(matcher):
     """
-    Файловый режим - обработка файла с адресами
+    Файловый режим - обогащение файла с адресами данными из базы
     """
     print("\n" + "=" * 60)
-    print("ФАЙЛОВЫЙ РЕЖИМ ОБРАБОТКИ АДРЕСОВ")
+    print("ФАЙЛОВЫЙ РЕЖИМ ОБОГАЩЕНИЯ ДАННЫХ")
     print("=" * 60)
 
     # Проверяем наличие файла
@@ -122,7 +123,7 @@ def file_mode(matcher):
         matcher.process_file(file_path)
 
         print("\n" + "=" * 60)
-        print("✅ ОБРАБОТКА ЗАВЕРШЕНА")
+        print("✅ ОБОГАЩЕНИЕ ЗАВЕРШЕНО")
         print("=" * 60)
         print("\nРезультат сохранен в файл с суффиксом '_with_unom'")
         print("\nНажмите Enter для возврата в главное меню...")
@@ -168,6 +169,17 @@ def test_mode(matcher):
 
 def main():
     """Главная функция"""
+    # Парсинг аргументов командной строки
+    parser = argparse.ArgumentParser(description='Address Matcher')
+    parser.add_argument('--rebuild-cache', action='store_true',
+                       help='Принудительная пересборка кэша')
+    parser.add_argument('--cache-dir', type=str, default='cache',
+                       help='Папка для хранения кэша (по умолчанию: cache)')
+    args = parser.parse_args()
+    
+    if args.rebuild_cache:
+        print("🔧 Режим принудительной пересборки кэша")
+
     # Загружаем базу адресов
     print("Загрузка базы адресов...")
     try:
@@ -181,9 +193,13 @@ def main():
         print(f"❌ Ошибка загрузки: {e}")
         sys.exit(1)
 
+    # Преобразуем УНОМ в int (если нужно)
+    if 'УНОМ' in df.columns:
+        df['УНОМ'] = pd.to_numeric(df['УНОМ'], errors='coerce').fillna(0).astype(int)
+
     # Создаем матчер
     print("\nИнициализация поискового движка...")
-    matcher = AddressMatcher(df, use_index=True)
+    matcher = AddressMatcher(df, use_index=True, cache_dir=args.cache_dir, force_rebuild=args.rebuild_cache)
 
     # Выводим баннер
     print_banner()

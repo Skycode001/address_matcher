@@ -60,3 +60,6 @@ src/compare_without_ml.py
 
 # Results file
 /data
+
+# Кэш
+cache/
