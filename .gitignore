@@ -14,12 +14,23 @@ __pycache__/
 *.egg
 
 # Модели (большие файлы)
+# Модели (исключаем всё, кроме example файлов)
 models/*.pkl
 models/*.joblib
+!models/*example*.pkl
+!models/*example*.joblib
 
 # Данные (если чувствительные)
 data/*.csv
+data/*.xlsx
+data/*.xls
+!data/*example*.csv
+!data/*example*.xlsx
+!data/*example*.xls
 !data/.gitkeep
+
+# Кэш (исключаем всё, кроме example файлов)
+cache/*.pkl
 
 # IDE
 .vscode/
@@ -57,9 +68,3 @@ src/batch_test.py
 src/batch_process.py
 src/debug_address.py
 src/compare_without_ml.py
-
-# Results file
-/data
-
-# Кэш
-cache/
