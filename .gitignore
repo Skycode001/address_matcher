@@ -17,6 +17,7 @@ __pycache__/
 # Модели (исключаем всё, кроме example файлов)
 models/*.pkl
 models/*.joblib
+models/.gitkeep
 !models/*example*.pkl
 !models/*example*.joblib
 
@@ -24,6 +25,7 @@ models/*.joblib
 data/*.csv
 data/*.xlsx
 data/*.xls
+data/.gitkeep
 !data/*example*.csv
 !data/*example*.xlsx
 !data/*example*.xls
@@ -31,6 +33,7 @@ data/*.xls
 
 # Кэш (исключаем всё, кроме example файлов)
 cache/*.pkl
+cache/.gitkeep
 
 # IDE
 .vscode/
