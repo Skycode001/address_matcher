@@ -1,4 +1,4 @@
-# Address Matcher — Система интеллектуального поиска адресов
+## Address Matcher — Система интеллектуального поиска адресов
 
 <p align="center">
   <img src="docs/header.png" alt="Address Matcher Logo" width="800">
@@ -9,9 +9,6 @@
   <img src="https://img.shields.io/badge/scikit--learn-1.3%2B-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white">
   <img src="https://img.shields.io/badge/Version-1.0.0-blue?style=for-the-badge">
 </p>
-
-
-...
 
 ## 📋 Оглавление
 
